@@ -42,6 +42,10 @@ optimizer:
 scheduler:
   name: cosine
 
+logging:
+  log_dir: ./results/logs
+
+
 # Callbacks
 callbacks:
   early_stopping:
