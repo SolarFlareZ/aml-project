@@ -21,7 +21,8 @@ class SparseSGDM(SGD):
                          dampening=dampening, weight_decay=weight_decay,
                          nesterov=nesterov, maximize=maximize)
 
-        flat_params: List[torch.nn.Parameter] = []
+        flat_params: List[torch.nn.Parameter] = [] # gather all params
+        # Iterate over all parameter groups and parameters to flatten them into a single list
         for group in self.param_groups:
             for p in group['params']:
                 flat_params.append(p)
@@ -31,26 +32,31 @@ class SparseSGDM(SGD):
 
         if mask is None:
             pass
-
+        
+        # Handle dict case
         elif isinstance(mask, dict):
+            # Iterate over items and map by id
             for k, v in mask.items():
                 if isinstance(k, torch.nn.Parameter):
-                    self._mask_by_id[id(k)] = v
+                    self._mask_by_id[id(k)] = v  # map by id
                 else:
-                    self._mask_by_id[int(k)] = v
+                    self._mask_by_id[int(k)] = v # map by id directly
 
+        # Handle list/tuple case
         elif isinstance(mask, (list, tuple)):
             if len(mask) != len(flat_params):
                 raise ValueError("Mask list length must match number of parameters.")
             for p, m in zip(flat_params, mask):
-                self._mask_by_id[id(p)] = m
+                self._mask_by_id[id(p)] = m # map by id
 
         else:
             raise TypeError("mask must be None, dict, or list/tuple of tensors")
 
+    # Get mask for a parameter
     def _get_mask(self, p: torch.nn.Parameter):
         return self._mask_by_id.get(id(p), None)
 
+    # Override step method to apply masks
     def step(self, closure=None):
 
         # Save original gradients
@@ -58,13 +64,15 @@ class SparseSGDM(SGD):
 
         # Apply mask to gradients BEFORE update
         for group in self.param_groups:
+            # Iterate over parameters
             for p in group['params']:
                 if p.grad is None:
                     orig_grads.append(None)
                     continue
-
+                # Save original gradient
                 orig_grads.append(p.grad.clone())
 
+                # Apply mask if exists
                 mask = self._get_mask(p)
                 if mask is not None:
                     # enforce boolean mask to avoid numeric drift
