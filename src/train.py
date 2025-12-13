@@ -14,7 +14,7 @@ from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from .datamodule import CIFAR100DataModule
 from .model import DinoClassifier
 
-
+# Define the training function with Hydra configuration
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def train(cfg: DictConfig) -> None:    
     print("config:")
@@ -31,6 +31,7 @@ def train(cfg: DictConfig) -> None:
     
     pl.seed_everything(cfg.seed, workers=True)
     
+    # Initialize data module, model, callbacks, logger, and trainer
     datamodule = CIFAR100DataModule(
         data_dir=data_dir,
         batch_size=cfg.data.batch_size,
@@ -40,6 +41,7 @@ def train(cfg: DictConfig) -> None:
         image_size=cfg.model.image_size
     )
     
+    # Initialize model
     model = DinoClassifier(
         num_classes=cfg.model.num_classes,
         lr=cfg.optimizer.lr,
@@ -50,6 +52,7 @@ def train(cfg: DictConfig) -> None:
         freeze_backbone=cfg.model.freeze_backbone
     )
     
+    # Callbacks
     callbacks = [
         ModelCheckpoint(
             monitor=cfg.callbacks.model_checkpoint.monitor,
@@ -67,26 +70,38 @@ def train(cfg: DictConfig) -> None:
         LearningRateMonitor(logging_interval='epoch')
     ]
     
-
+    # Logger
     logger = CSVLogger(log_dir, name=cfg.experiment_name)
     
+    # Optionally add WandbLogger
+    if cfg.logging.use_wandb:
+        wandb_logger = WandbLogger(
+            name=cfg.experiment_name,
+            project=cfg.logging.wandb.project,
+            log_model='all',
+            save_dir=log_dir
+        )
+        logger = wandb_logger
+    
+    # Trainer
     trainer = pl.Trainer(
-        max_epochs=cfg.trainer.max_epochs,
-        accelerator=cfg.trainer.accelerator,
-        devices=cfg.trainer.devices,
-        precision=cfg.trainer.precision,
-        gradient_clip_val=cfg.trainer.gradient_clip_val,
-        log_every_n_steps=cfg.trainer.log_every_n_steps,
-        check_val_every_n_epoch=cfg.trainer.check_val_every_n_epoch,
-        accumulate_grad_batches=cfg.trainer.accumulate_grad_batches,
-        callbacks=callbacks,
+        max_epochs=cfg.trainer.max_epochs, # total number of epochs
+        accelerator=cfg.trainer.accelerator, # 'auto', 'gpu', 'cpu', 'tpu', etc.
+        devices=cfg.trainer.devices, # number of devices to use
+        precision=cfg.trainer.precision,    # 16, 32, 'bf16', etc.
+        gradient_clip_val=cfg.trainer.gradient_clip_val, # gradient clipping value
+        log_every_n_steps=cfg.trainer.log_every_n_steps, # logging frequency
+        check_val_every_n_epoch=cfg.trainer.check_val_every_n_epoch, # validation frequency
+        accumulate_grad_batches=cfg.trainer.accumulate_grad_batches, # gradient accumulation
+        callbacks=callbacks, 
         logger=logger
     )
     
     # checking checkpoints
-    ckpt_path = cfg.get('resume_from', None)
+    ckpt_path = cfg.get('resume_from', None) 
+    # make path absolute
     if ckpt_path and not os.path.isabs(ckpt_path):
-        ckpt_path = os.path.join(original_cwd, ckpt_path)
+        ckpt_path = os.path.join(original_cwd, ckpt_path) 
     
     print("starting training...")
     trainer.fit(model, datamodule, ckpt_path=ckpt_path)
