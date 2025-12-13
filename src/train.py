@@ -93,12 +93,13 @@ def train(cfg: DictConfig) -> None:
     
     print("starting testing...")
     trainer.test(model, datamodule, ckpt_path='best')
-    
+    test_acc = trainer.callback_metrics.get('test_acc', None)
+
     
     print("training complete")
     print(f"best checkpoint: {trainer.checkpoint_callback.best_model_path}")
     print(f"best val_acc: {trainer.checkpoint_callback.best_model_score:.4f}")
-    print(f"best test_acc: {trainer.checkpoint_callback.test_acc:.4f}")
+    print(f"best test_acc: {test_acc:.4f}")
 
 if __name__ == "__main__":
     train()
