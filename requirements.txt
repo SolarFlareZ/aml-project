@@ -1,6 +1,4 @@
 hydra-core
 omegaconf
-pytorch_lightning
+pytorch-lightning
 torchmetrics
-torchmetrics
-torchvision
