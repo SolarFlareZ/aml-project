@@ -20,7 +20,7 @@ def train(cfg: DictConfig) -> None:
     print("config:")
     print(OmegaConf.to_yaml(cfg))
     
-    # hydra chagnes root dir
+    # Configure paths
     original_cwd = get_original_cwd()
     data_dir = os.path.join(original_cwd, cfg.data.data_dir)
     checkpoint_dir = os.path.join(original_cwd, cfg.callbacks.model_checkpoint.dirpath)
@@ -54,6 +54,7 @@ def train(cfg: DictConfig) -> None:
     
     # Callbacks
     callbacks = [
+        # Save best model based on validation accuracy
         ModelCheckpoint(
             monitor=cfg.callbacks.model_checkpoint.monitor,
             mode=cfg.callbacks.model_checkpoint.mode,
@@ -62,18 +63,20 @@ def train(cfg: DictConfig) -> None:
             filename=cfg.callbacks.model_checkpoint.filename,
             save_last=True
         ),
+        # Early stopping if no improvement in validation accuracy
         EarlyStopping(
             monitor=cfg.callbacks.early_stopping.monitor,
             patience=cfg.callbacks.early_stopping.patience,
             mode=cfg.callbacks.early_stopping.mode,
         ),
+        # Monitor learning rate to log it
         LearningRateMonitor(logging_interval='epoch')
     ]
     
-    # Logger
+    # Save logs to CSV
     logger = CSVLogger(log_dir, name=cfg.experiment_name)
     
-    # Optionally add WandbLogger
+    # Optionally to visualize with Weights & Biases
     if cfg.logging.use_wandb:
         wandb_logger = WandbLogger(
             name=cfg.experiment_name,
@@ -83,7 +86,7 @@ def train(cfg: DictConfig) -> None:
         )
         logger = wandb_logger
     
-    # Trainer
+    # Configure Trainer
     trainer = pl.Trainer(
         max_epochs=cfg.trainer.max_epochs, # total number of epochs
         accelerator=cfg.trainer.accelerator, # 'auto', 'gpu', 'cpu', 'tpu', etc.
@@ -97,9 +100,8 @@ def train(cfg: DictConfig) -> None:
         logger=logger
     )
     
-    # checking checkpoints
+    # Resume training to the last checkpoint
     ckpt_path = cfg.get('resume_from', None) 
-    # make path absolute
     if ckpt_path and not os.path.isabs(ckpt_path):
         ckpt_path = os.path.join(original_cwd, ckpt_path) 
     
@@ -107,7 +109,7 @@ def train(cfg: DictConfig) -> None:
     trainer.fit(model, datamodule, ckpt_path=ckpt_path)
     
     print("starting testing...")
-    trainer.test(model, datamodule, ckpt_path='best')
+    trainer.test(model, datamodule, ckpt_path='best') # test using the best checkpoint
     test_acc = trainer.callback_metrics.get('test_acc', None)
 
     
