@@ -11,9 +11,9 @@ class TransformSubset(Dataset):
     def __init__(self, dataset: Dataset, indices: list, transform: Optional[transforms.Compose] = None):
         self.dataset = dataset # original dataset
         self.indices = indices # list of indices for the subset
-        self.transform = transform # optional transform to apply
+        self.transform = transform # optional transform to apply tp subset
     
-    # Get item by index
+    # Get item by index and apply transformation if exists
     def __getitem__(self, idx: int):
         img, label = self.dataset[self.indices[idx]]
         if self.transform:
@@ -50,17 +50,20 @@ class CIFAR100DataModule(pl.LightningDataModule):
         self.image_size = image_size
     
     def prepare_data(self) -> None:
-        # put here as setup is ran once per process i think, this should solve that
+        # Process to upload data once time
         datasets.CIFAR100(self.data_dir, train=True, download=True) # download only
         datasets.CIFAR100(self.data_dir, train=False, download=True) 
     
     def setup(self, stage: Optional[str] = None) -> None: # fit, test or None
         # Define transforms
+        # Data augmentation for training set because Dino needs millions of data
+        # Data augmentation avoid overfitting on small datasets
+        # Data resizing to 224 for Dino ViT-S/16
         train_transform = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
             transforms.Resize(self.image_size, interpolation=transforms.InterpolationMode.BICUBIC), # bicubic is best quality for interpolation, but it might be slow, we can switch to something simpler
-            transforms.ToTensor(),
+            transforms.ToTensor(), # convert PIL image to tensor
             transforms.Normalize(self.MEAN, self.STD),
         ])
         
@@ -70,7 +73,7 @@ class CIFAR100DataModule(pl.LightningDataModule):
             transforms.Normalize(self.MEAN, self.STD),
         ])
         
-        # Setup datasets for different stages
+        # Split dataset for train/validation
         if stage == 'fit' or stage is None:
             full_train = datasets.CIFAR100(self.data_dir, train=True, download=False) 
             
@@ -85,13 +88,13 @@ class CIFAR100DataModule(pl.LightningDataModule):
             self.train_dataset = TransformSubset(full_train, train_indices, train_transform) 
             self.val_dataset = TransformSubset(full_train, val_indices, test_transform)
         
-        # Test dataset
+        # Test dataset with test transforms
         if stage == 'test' or stage is None:
             self.test_dataset = datasets.CIFAR100(
                 self.data_dir, train=False, download=False, transform=test_transform
             )
     
-    # Data loaders
+    # Return data loaders
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
             self.train_dataset,
@@ -103,6 +106,7 @@ class CIFAR100DataModule(pl.LightningDataModule):
             drop_last=True,
         )
     
+    # Return validation data loader
     def val_dataloader(self) -> DataLoader:
         return DataLoader(
             self.val_dataset,
@@ -113,6 +117,7 @@ class CIFAR100DataModule(pl.LightningDataModule):
             persistent_workers=self.num_workers > 0,
         )
     
+    # Return test data loader
     def test_dataloader(self) -> DataLoader:
         return DataLoader(
             self.test_dataset,
