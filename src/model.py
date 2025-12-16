@@ -129,9 +129,3 @@ class DinoClassifier(pl.LightningModule):
                 'interval': 'epoch',
             }
         } # read docs, if no scheduler, only return optimizer
-    
-
-
-
-
-    
