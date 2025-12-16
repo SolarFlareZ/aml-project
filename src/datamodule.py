@@ -1,6 +1,7 @@
 import os
-from typing import Optional
+from typing import Optional, Literal, Dict, List
 
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -23,8 +24,8 @@ class TransformSubset(Dataset):
         return len(self.indices)
 
 
-class CIFAR100DataModule(pl.LightningDataModule):    
-    # need to double check these, I found them on github issues
+
+class BaseCIFAR100DataModule(pl.LightningDataModule):    
     MEAN = (0.5071, 0.4867, 0.4408)
     STD = (0.2675, 0.2565, 0.2761)
     
@@ -35,11 +36,9 @@ class CIFAR100DataModule(pl.LightningDataModule):
         num_workers: Optional[int] = None,
         val_split: float = 0.1,
         seed: int = 42,
-        image_size: int = 224, # 224 is what DINOO expects
+        image_size: int = 224,
     ) -> None:
         super().__init__()
-        self.save_hyperparameters() # can use self.hparams.batch_size etc...
-        
         self.data_dir = data_dir
         self.batch_size = batch_size
         self.num_workers = num_workers if num_workers is not None else min(4, os.cpu_count() or 0)
@@ -47,70 +46,212 @@ class CIFAR100DataModule(pl.LightningDataModule):
         self.seed = seed
         self.image_size = image_size
     
-    def prepare_data(self) -> None:
-        # put here as setup is ran once per process i think, this should solve that
-        datasets.CIFAR100(self.data_dir, train=True, download=True)
-        datasets.CIFAR100(self.data_dir, train=False, download=True)
-    
-    def setup(self, stage: Optional[str] = None) -> None: # fit, test or None
-
-        train_transform = transforms.Compose([
+    @property
+    def train_transform(self) -> transforms.Compose:
+        return transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
-            transforms.Resize(self.image_size, interpolation=transforms.InterpolationMode.BICUBIC), # bicubic is best quality for interpolation, but it might be slow, we can switch to something simpler
-            transforms.ToTensor(),
-            transforms.Normalize(self.MEAN, self.STD),
-        ])
-        
-        test_transform = transforms.Compose([
             transforms.Resize(self.image_size, interpolation=transforms.InterpolationMode.BICUBIC),
             transforms.ToTensor(),
             transforms.Normalize(self.MEAN, self.STD),
         ])
-        
+    
+    @property
+    def test_transform(self) -> transforms.Compose:
+        return transforms.Compose([
+            transforms.Resize(self.image_size, interpolation=transforms.InterpolationMode.BICUBIC),
+            transforms.ToTensor(),
+            transforms.Normalize(self.MEAN, self.STD),
+        ])
+    
+    def prepare_data(self) -> None:
+        datasets.CIFAR100(self.data_dir, train=True, download=True)
+        datasets.CIFAR100(self.data_dir, train=False, download=True)
+    
+    def setup(self, stage: Optional[str] = None) -> None:
+        """This is the shared logic for both child classes, note the super() call in these"""
         if stage == 'fit' or stage is None:
-            full_train = datasets.CIFAR100(self.data_dir, train=True, download=False)
-            
-            n_train = int(len(full_train) * (1 - self.val_split))
+            self.full_train = datasets.CIFAR100(self.data_dir, train=True, download=False)
+            n_train = int(len(self.full_train) * (1 - self.val_split))
             
             generator = torch.Generator().manual_seed(self.seed)
-            indices = torch.randperm(len(full_train), generator=generator).tolist()
-            train_indices, val_indices = indices[:n_train], indices[n_train:]
+            indices = torch.randperm(len(self.full_train), generator=generator).tolist()
+            self.train_indices = indices[:n_train]
             
-            self.train_dataset = TransformSubset(full_train, train_indices, train_transform)
-            self.val_dataset = TransformSubset(full_train, val_indices, test_transform)
+            self.val_dataset = TransformSubset(self.full_train, indices[n_train:], self.test_transform)
         
         if stage == 'test' or stage is None:
             self.test_dataset = datasets.CIFAR100(
-                self.data_dir, train=False, download=False, transform=test_transform
+                self.data_dir, train=False, download=False, transform=self.test_transform
             )
-    
-    def train_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=self.num_workers,
-            pin_memory=True,
-            persistent_workers=self.num_workers > 0,
-            drop_last=True,
-        )
     
     def val_dataloader(self) -> DataLoader:
         return DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            pin_memory=True,
+            self.val_dataset, batch_size=self.batch_size, shuffle=False,
+            num_workers=self.num_workers, pin_memory=True,
             persistent_workers=self.num_workers > 0,
         )
     
     def test_dataloader(self) -> DataLoader:
         return DataLoader(
-            self.test_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            pin_memory=True,
+            self.test_dataset, batch_size=self.batch_size, shuffle=False,
+            num_workers=self.num_workers, pin_memory=True,
         )
+
+
+
+
+
+
+class CIFAR100DataModule(BaseCIFAR100DataModule):
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.save_hyperparameters()
+    
+    def prepare_data(self) -> None:
+        # put here as setup is ran once per process i think, this should solve that
+        datasets.CIFAR100(self.data_dir, train=True, download=True)
+        datasets.CIFAR100(self.data_dir, train=False, download=True)
+    
+    def setup(self, stage: Optional[str] = None) -> None:
+        super().setup(stage)
+        if stage == 'fit' or stage is None:
+            self.train_dataset = TransformSubset(
+                self.full_train, self.train_indices, self.train_transform
+            )
+    
+    def train_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.train_dataset, batch_size=self.batch_size, shuffle=True,
+            num_workers=self.num_workers, pin_memory=True,
+            persistent_workers=self.num_workers > 0, drop_last=True,
+        )
+    
+
+
+
+
+
+class FederatedCIFAR100DataModule(BaseCIFAR100DataModule):    
+    def __init__(
+        self,
+        num_clients: int = 100,
+        sharding: Literal['iid', 'non_iid'] = 'iid',
+        num_classes_per_client: int = 10,
+        **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        self.num_clients = num_clients
+        self.sharding = sharding
+        self.num_classes_per_client = num_classes_per_client
+        self.client_indices: Dict[int, List[int]] = {}
+        self.save_hyperparameters()
+    
+    def _iid_sharding(self, targets: np.ndarray) -> Dict[int, List[int]]:
+        rng = np.random.default_rng(self.seed)
+        indices = rng.permutation(len(targets))
+        splits = np.array_split(indices, self.num_clients)
+        return {i: split.tolist() for i, split in enumerate(splits)}
+    
+    def _non_iid_sharding(self, targets: np.ndarray) -> Dict[int, List[int]]:
+        rng = np.random.default_rng(self.seed)
+        num_classes = len(np.unique(targets))
+        
+        class_indices = {c: np.where(targets == c)[0].tolist() for c in range(num_classes)}
+        for c in class_indices:
+            rng.shuffle(class_indices[c])
+        
+        total_shards = self.num_clients * self.num_classes_per_client
+        shards_per_class = total_shards // num_classes
+        
+        all_shards = []
+        for c in range(num_classes):
+            class_data = class_indices[c]
+            shard_size = len(class_data) // shards_per_class
+            for s in range(shards_per_class):
+                start = s * shard_size
+                end = start + shard_size if s < shards_per_class - 1 else len(class_data)
+                all_shards.append(class_data[start:end])
+        
+        rng.shuffle(all_shards)
+        
+        client_indices = {i: [] for i in range(self.num_clients)}
+        for client_id in range(self.num_clients):
+            for j in range(self.num_classes_per_client):
+                shard_idx = client_id * self.num_classes_per_client + j
+                if shard_idx < len(all_shards):
+                    client_indices[client_id].extend(all_shards[shard_idx])
+            rng.shuffle(client_indices[client_id])
+        
+        return client_indices
+    
+    def setup(self, stage: Optional[str] = None) -> None:
+        super().setup(stage)
+        
+        if stage == 'fit' or stage is None:
+            targets = np.array([self.full_train.targets[i] for i in self.train_indices])
+            
+            if self.sharding == 'iid':
+                relative_indices = self._iid_sharding(targets)
+            else:
+                relative_indices = self._non_iid_sharding(targets)
+            
+            self.client_indices = {
+                cid: [self.train_indices[i] for i in idx_list]
+                for cid, idx_list in relative_indices.items()
+            }
+    
+    def get_client_dataloader(self, client_id: int, shuffle: bool = True) -> DataLoader:
+        client_dataset = TransformSubset(
+            self.full_train, self.client_indices[client_id], self.train_transform
+        )
+        return DataLoader(
+            client_dataset, batch_size=self.batch_size, shuffle=shuffle,
+            num_workers=self.num_workers, pin_memory=True,
+            drop_last=len(client_dataset) > self.batch_size,
+        )
+    
+    def get_client_sample_count(self, client_id: int) -> int:
+        return len(self.client_indices[client_id])
+    
+    # might not be necessary
+    def get_client_class_distribution(self, client_id: int) -> Dict[int, int]:
+        indices = self.client_indices[client_id]
+        targets = [self.full_train.targets[i] for i in indices]
+        unique, counts = np.unique(targets, return_counts=True)
+        return dict(zip(unique.tolist(), counts.tolist()))
+    
+
+
+    # temp AI, this simulates real world scenarios better...
+    def _dirichlet_non_iid_sharding(self, targets: np.ndarray, alpha: float = 0.5) -> Dict[int, List[int]]:
+        rng = np.random.default_rng(self.seed)
+        num_classes = len(np.unique(targets))
+        
+        # Get indices for each class
+        class_indices = [np.where(targets == c)[0] for c in range(num_classes)]
+        
+        client_indices = {i: [] for i in range(self.num_clients)}
+        
+        # For each class, distribute its samples across clients using Dirichlet
+        for c_idx in class_indices:
+            # Sample proportions from Dirichlet distribution
+            proportions = rng.dirichlet(np.repeat(alpha, self.num_clients))
+            
+            # Shuffle class samples
+            rng.shuffle(c_idx)
+            
+            # Split according to proportions
+            proportions = (np.cumsum(proportions) * len(c_idx)).astype(int)[:-1]
+            splits = np.split(c_idx, proportions)
+            
+            # Assign to clients
+            for client_id, split in enumerate(splits):
+                client_indices[client_id].extend(split.tolist())
+        
+        # Shuffle each client's data
+        for client_id in client_indices:
+            rng.shuffle(client_indices[client_id])
+        
+        return client_indices
