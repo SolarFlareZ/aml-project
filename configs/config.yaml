@@ -14,6 +14,12 @@ data:
   batch_size: 128
   num_workers: 0
   val_split: 0.1
+  fl_clients: 100        # K: Total number of clients
+  fl_rounds: 1000        # Total FL rounds (for FedAvg)
+  client_frac: 0.1       # C: Fraction of clients selected per round
+  local_epochs: 4        # J: Local epochs per client
+  iid: true              # Sharding mode (true for IID, false for Non-IID)
+  non_iid_classes: 10    # Nc: Number of classes per client (if non-iid)
 
 # Model
 model:
