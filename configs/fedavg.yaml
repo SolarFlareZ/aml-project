@@ -1,0 +1,20 @@
+defaults:
+  - base
+  - _self_
+
+experiment_name: fedavg
+
+
+federated:
+  num_clients: 100
+  participation_rate: 0.1
+  local_steps: 4
+  num_rounds: 500
+  sharding: iid
+  num_classes_per_client: 10  # only used when sharding: shard
+
+logging:
+  eval_every: 10
+  checkpoint_every: 50 # not used...
+  checkpoint_dir: ./results/checkpoints/fedavg
+  output_dir: ./results/outputs/fedavg
