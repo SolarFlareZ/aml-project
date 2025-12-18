@@ -1,0 +1,16 @@
+batch_size: 128
+data_dir: ./data
+fl_clients: 100
+freeze_backbone: true
+iid: true
+image_size: 224
+lr: 0.01
+max_epochs: 5
+momentum: 0.9
+non_iid_classes: 10
+num_classes: 100
+num_workers: null
+scheduler: cosine
+seed: 42
+val_split: 0.1
+weight_decay: 0.0005

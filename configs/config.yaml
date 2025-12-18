@@ -3,74 +3,48 @@
 defaults:
   - _self_
 
-# Experiment
-experiment_name: centralized_baseline
+experiment_name: fl_task_arithmetic
 seed: 42
-resume_from: null
 
-# Data
+# Data Configuration
 data:
   data_dir: ./data
-  batch_size: 128
+  batch_size: 64         # Reduced for laptop CPU stability
   num_workers: 0
   val_split: 0.1
-  fl_clients: 100        # K: Total number of clients
-  fl_rounds: 1000        # Total FL rounds (for FedAvg)
-  client_frac: 0.1       # C: Fraction of clients selected per round
-  local_epochs: 4        # J: Local epochs per client
-  iid: true              # Sharding mode (true for IID, false for Non-IID)
-  non_iid_classes: 10    # Nc: Number of classes per client (if non-iid)
+  fl_clients: 5          # Number of clients
+  fl_rounds: 5           # Number of rounds
+  client_frac: 0.4       # Fraction selected per round (0.4 * 5 = 2 clients)
+  local_epochs: 1
+  iid: true
+  non_iid_classes: 10
+  image_size: 224
 
-# Model
+# Model Configuration
 model:
   num_classes: 100
   freeze_backbone: true
   image_size: 224
 
-# Trainer
+# Trainer Configuration
 trainer:
-  max_epochs: 100
-  accelerator: auto
+  accelerator: cpu       # Set to 'cpu' since you are on a laptop
   devices: 1
-  precision: 16-mixed
-  gradient_clip_val: 1.0
-  log_every_n_steps: 50
-  check_val_every_n_epoch: 1
-  accumulate_grad_batches: 1
+  precision: 32          # Use 32 for CPU
+  val_check_interval: 1  # Matches your script's cfg.trainer.val_check_interval
 
-# Optimizer
+# Optimizer Configuration
 optimizer:
   lr: 0.01
   momentum: 0.9
-  weight_decay: 0.0005
+  weight_decay: 5e-4
 
-# Scheduler
-scheduler:
-  name: cosine
+# Task Arithmetic & Pruning Configuration
+task_arithmetic:
+  alpha: 0.4
+pruning:
+  sparsity: 0.5
 
+# Logging
 logging:
   log_dir: ./results/logs
-
-
-# Callbacks
-callbacks:
-  early_stopping:
-    monitor: val_acc
-    patience: 15
-    mode: max
-  model_checkpoint:
-    monitor: val_acc
-    mode: max
-    save_top_k: 3
-    save_last: true
-    dirpath: ./results/checkpoints
-    filename: "{epoch:02d}-{val_acc:.4f}"
-
-# Hyperparameter search
-hp_search:
-  n_trials: 20
-  max_epochs_per_trial: 20
-  search_space:
-    lr: [0.001, 0.1]
-    momentum: [0.8, 0.95]
-    batch_size: [64, 128, 256]

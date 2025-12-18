@@ -77,7 +77,7 @@ def train(cfg: DictConfig) -> None:
     logger = CSVLogger(log_dir, name=cfg.experiment_name)
     
     # Optionally to visualize with Weights & Biases
-    if cfg.logging.use_wandb:
+    if cfg.logging.get('use_wandb', False):
         wandb_logger = WandbLogger(
             name=cfg.experiment_name,
             project=cfg.logging.wandb.project,

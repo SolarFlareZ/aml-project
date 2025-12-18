@@ -1,0 +1,7 @@
+- trainer.accelerator=cpu
+- trainer.precision=32
+- data.fl_rounds=10
+- data.client_frac=0.1
+- data.local_epochs=2
+- data.iid=true
+- experiment_name=iid_baseline_cpu
