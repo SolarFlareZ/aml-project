@@ -51,8 +51,14 @@ class DinoClassifier(pl.LightningModule):
         2. Classify features using the linear classifier.
         3. Return class logits.
         """
-        with torch.no_grad(): # this does not consider freeze=false, need fix
+        # If backbone is frozen, we can use no_grad to save memory
+        if self.hparams.freeze_backbone:
+            with torch.no_grad():
+                features = self.backbone(x)
+        else:
+            # If we are fine-tuning (e.g. for Task Arithmetic), we NEED gradients
             features = self.backbone(x)
+            
         return self.classifier(features)
     
     # Training step
