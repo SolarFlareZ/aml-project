@@ -108,6 +108,29 @@ def train(cfg: DictConfig) -> None:
     print("starting training...")
     trainer.fit(model, datamodule, ckpt_path=ckpt_path)
     
+    # ================================================================
+    # EXTENSION 1: MOST-SENSITIVE FISHER
+    # ================================================================
+    from .utils import (
+        compute_fisher_importance,
+        build_fisher_mask_most_sensitive
+    )
+
+    print("computing fisher information...")
+    fisher = compute_fisher_importance(
+        model=model,
+        dataloader=datamodule.train_dataloader(),
+        loss_fn=model.criterion,
+        device=model.device
+    )
+
+    print("building most-sensitive fisher mask...")
+    mask = build_fisher_mask_most_sensitive(
+        fisher_dict=fisher,
+        fraction=cfg.pruning.fraction
+    )
+    # ================================================================
+
     print("starting testing...")
     trainer.test(model, datamodule, ckpt_path='best') # test using the best checkpoint
     test_acc = trainer.callback_metrics.get('test_acc', None)

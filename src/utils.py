@@ -1,6 +1,67 @@
 #Extension 1
 
 import torch
+from typing import Dict, Optional
+from torch.utils.data import DataLoader
+
+
+def compute_fisher_importance(
+    model,
+    dataloader: DataLoader,
+    loss_fn,
+    device: torch.device,
+    num_batches: Optional[int] = None
+) -> Dict[torch.nn.Parameter, torch.Tensor]:
+    """
+    Approximate diagonal Fisher Information for each trainable parameter.
+
+    Fisher(p) ≈ E[(∂L/∂p)^2] over mini-batches.
+
+    Args:
+        model: PyTorch / Lightning model
+        dataloader: training dataloader
+        loss_fn: loss function (e.g. CrossEntropyLoss)
+        device: cpu or cuda
+        num_batches: number of batches to use (None = all)
+
+    Returns:
+        Dictionary mapping parameter -> Fisher tensor
+    """
+
+    model.train()
+
+    fisher = {}
+    for p in model.parameters():
+        if p.requires_grad:
+            fisher[p] = torch.zeros_like(p, device=device)
+
+    n_batches = 0
+
+    for batch_idx, batch in enumerate(dataloader):
+        if num_batches is not None and batch_idx >= num_batches:
+            break
+
+        x, y = batch
+        x = x.to(device)
+        y = y.to(device)
+
+        model.zero_grad(set_to_none=True)
+
+        outputs = model(x)
+        loss = loss_fn(outputs, y)
+        loss.backward()
+
+        for p in model.parameters():
+            if p.requires_grad and p.grad is not None:
+                fisher[p] += p.grad.detach() ** 2
+
+        n_batches += 1
+
+    for p in fisher:
+        fisher[p] /= float(n_batches)
+
+    return fisher
+
 
 def build_fisher_mask_most_sensitive(
     fisher_dict: dict,
