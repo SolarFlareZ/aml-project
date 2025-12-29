@@ -14,6 +14,13 @@ from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from .datamodule import CIFAR100DataModule
 from .model import DinoClassifier
 
+from .utils import (
+        compute_fisher_importance,
+        build_fisher_mask_most_sensitive,
+        build_magnitude_mask
+    )
+
+
 # Define the training function with Hydra configuration
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def train(cfg: DictConfig) -> None:    
@@ -109,13 +116,9 @@ def train(cfg: DictConfig) -> None:
     trainer.fit(model, datamodule, ckpt_path=ckpt_path)
     
     # ================================================================
-    # EXTENSION 1: MOST-SENSITIVE FISHER
+    # EXTENSIONS
     # ================================================================
-    from .utils import (
-        compute_fisher_importance,
-        build_fisher_mask_most_sensitive
-    )
-
+    
     print("computing fisher information...")
     fisher = compute_fisher_importance(
         model=model,
@@ -123,11 +126,17 @@ def train(cfg: DictConfig) -> None:
         loss_fn=model.criterion,
         device=model.device
     )
-
+    #EX 1: most-sensitive weights
     print("building most-sensitive fisher mask...")
-    mask = build_fisher_mask_most_sensitive(
+    mask_ex1 = build_fisher_mask_most_sensitive(
         fisher_dict=fisher,
         fraction=cfg.pruning.fraction
+    )
+    #EX 2: lowest-magnitude weights
+    print("building magnitude-based pruning mask...")
+    mask_ex2 = build_magnitude_mask(
+    model=model,
+    fraction=cfg.pruning.fraction
     )
     # ================================================================
 

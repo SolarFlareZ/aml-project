@@ -1,9 +1,10 @@
-#Extension 1
-
 import torch
 from typing import Dict, Optional
 from torch.utils.data import DataLoader
 
+# -----------------------------
+# Fisher Information
+# -----------------------------
 
 def compute_fisher_importance(
     model,
@@ -62,6 +63,10 @@ def compute_fisher_importance(
 
     return fisher
 
+# -----------------------------
+# Extension 1:
+# Most-sensitive Fisher pruning
+# -----------------------------
 
 def build_fisher_mask_most_sensitive(
     fisher_dict: dict,
@@ -99,8 +104,60 @@ def build_fisher_mask_most_sensitive(
     threshold, _ = torch.kthvalue(all_fisher_values, k)
 
     # Build mask: keep parameters with Fisher >= threshold
-    mask = {}
+    mask_ex1 = {}
     for param, fisher in fisher_dict.items():
-        mask[param] = (fisher >= threshold)
+        mask_ex1[param] = (fisher >= threshold)
 
-    return mask
+    return mask_ex1
+
+# -----------------------------
+# Extension 2:
+# Magnitude-based pruning
+# -----------------------------
+
+import torch
+
+def build_magnitude_mask(
+    model: torch.nn.Module,
+    fraction: float
+):
+    """
+    Build a pruning mask based on parameter magnitude.
+    Selects the LOWEST-magnitude weights (classic magnitude pruning).
+
+    Args:
+        model (torch.nn.Module):
+            The neural network model.
+        fraction (float):
+            Fraction of parameters to prune.
+            Example: 0.3 means pruning the lowest 30% |w| values.
+
+    Returns:
+        mask (dict):
+            Dictionary mapping parameter -> boolean mask tensor
+            True  = keep
+            False = prune
+    """
+
+    assert 0.0 < fraction < 1.0, "fraction must be in (0, 1)"
+
+    # Collect absolute values of all trainable parameters
+    all_weights = []
+    for param in model.parameters():
+        if param.requires_grad:
+            all_weights.append(param.data.abs().view(-1))
+
+    # Concatenate into one vector
+    all_weights = torch.cat(all_weights)
+
+    # Determine magnitude threshold for pruning
+    k = int(fraction * all_weights.numel())
+    threshold, _ = torch.kthvalue(all_weights, k)
+
+    # Build mask: keep weights with magnitude larger than threshold
+    mask_ex2 = {}
+    for param in model.parameters():
+        if param.requires_grad:
+            mask_ex2[param] = (param.data.abs() > threshold)
+
+    return mask_ex2
