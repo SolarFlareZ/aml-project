@@ -22,7 +22,7 @@ from .utils import (
 
 
 # Define the training function with Hydra configuration
-@hydra.main(version_base=None, config_path="../configs", config_name="config")
+@hydra.main(version_base=None, config_path="../configs", config_name="centralized")
 def train(cfg: DictConfig) -> None:    
     print("config:")
     print(OmegaConf.to_yaml(cfg))
