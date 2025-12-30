@@ -9,7 +9,7 @@ from pytorch_lightning.callbacks import (
     LearningRateMonitor,
     ModelCheckpoint,
 )
-from pytorch_lightning.loggers import CSVLogger, WandbLogger
+from pytorch_lightning.loggers import CSVLogger # , WandbLogger
 
 from .datamodule import CIFAR100DataModule
 from .model import DinoClassifier
@@ -84,14 +84,14 @@ def train(cfg: DictConfig) -> None:
     logger = CSVLogger(log_dir, name=cfg.experiment_name)
     
     # Optionally to visualize with Weights & Biases
-    if cfg.logging.use_wandb:
-        wandb_logger = WandbLogger(
-            name=cfg.experiment_name,
-            project=cfg.logging.wandb.project,
-            log_model='all',
-            save_dir=log_dir
-        )
-        logger = wandb_logger
+    # if cfg.logging.use_wandb:
+    #     wandb_logger = WandbLogger(
+    #         name=cfg.experiment_name,
+    #         project=cfg.logging.wandb.project,
+    #         log_model='all',
+    #         save_dir=log_dir
+    #     )
+    #     logger = wandb_logger
     
     # Configure Trainer
     trainer = pl.Trainer(
