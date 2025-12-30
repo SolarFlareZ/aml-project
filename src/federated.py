@@ -1,5 +1,5 @@
 import copy
-from typing import Optional, Dict, List
+from typing import List
 
 import torch
 import torch.nn as nn
@@ -18,7 +18,7 @@ class FedAvg:
         lr: float = 0.01,
         momentum: float = 0.9,
         weight_decay: float = 0,
-        device: Optional[str] = None,
+        device = None,
     ):
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.global_model = model.to(self.device)
@@ -100,7 +100,7 @@ class FedAvg:
         self.history = checkpoint['history']
         return checkpoint['round']
 
-    def fit(self, eval_every: int = 10, checkpoint_path: Optional[str] = None, start_round: int = 0):
+    def fit(self, eval_every: int = 10, checkpoint_path = None, start_round: int = 0):
         for round_idx in tqdm(range(start_round, self.num_rounds), desc="FedAvg"):
             # Local training
             client_states, client_weights = [], []
