@@ -30,7 +30,7 @@ def train(cfg: DictConfig) -> None:
     # Configure paths
     original_cwd = get_original_cwd()
     data_dir = os.path.join(original_cwd, cfg.data.data_dir)
-    checkpoint_dir = os.path.join(original_cwd, cfg.callbacks.model_checkpoint.dirpath)
+    checkpoint_dir = os.path.join(original_cwd, cfg.centralized.callbacks.model_checkpoint.dirpath)
     log_dir = os.path.join(original_cwd, cfg.logging.log_dir)
     
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -54,8 +54,8 @@ def train(cfg: DictConfig) -> None:
         lr=cfg.optimizer.lr,
         momentum=cfg.optimizer.momentum,
         weight_decay=cfg.optimizer.weight_decay,
-        scheduler=cfg.scheduler.name,
-        max_epochs=cfg.trainer.max_epochs,
+        scheduler=cfg.centralized.scheduler.name,
+        max_epochs=cfg.centralized.trainer.max_epochs,
         freeze_backbone=cfg.model.freeze_backbone
     )
     
@@ -63,18 +63,18 @@ def train(cfg: DictConfig) -> None:
     callbacks = [
         # Save best model based on validation accuracy
         ModelCheckpoint(
-            monitor=cfg.callbacks.model_checkpoint.monitor,
-            mode=cfg.callbacks.model_checkpoint.mode,
-            save_top_k=cfg.callbacks.model_checkpoint.save_top_k,
+            monitor=cfg.centralized.callbacks.model_checkpoint.monitor,
+            mode=cfg.centralized.callbacks.model_checkpoint.mode,
+            save_top_k=cfg.centralized.callbacks.model_checkpoint.save_top_k,
             dirpath=checkpoint_dir,
-            filename=cfg.callbacks.model_checkpoint.filename,
+            filename=cfg.centralized.callbacks.model_checkpoint.filename,
             save_last=True
         ),
         # Early stopping if no improvement in validation accuracy
         EarlyStopping(
-            monitor=cfg.callbacks.early_stopping.monitor,
-            patience=cfg.callbacks.early_stopping.patience,
-            mode=cfg.callbacks.early_stopping.mode,
+            monitor=cfg.centralized.callbacks.early_stopping.monitor,
+            patience=cfg.centralized.callbacks.early_stopping.patience,
+            mode=cfg.centralized.callbacks.early_stopping.mode,
         ),
         # Monitor learning rate to log it
         LearningRateMonitor(logging_interval='epoch')
@@ -95,14 +95,14 @@ def train(cfg: DictConfig) -> None:
     
     # Configure Trainer
     trainer = pl.Trainer(
-        max_epochs=cfg.trainer.max_epochs, # total number of epochs
-        accelerator=cfg.trainer.accelerator, # 'auto', 'gpu', 'cpu', 'tpu', etc.
-        devices=cfg.trainer.devices, # number of devices to use
-        precision=cfg.trainer.precision,    # 16, 32, 'bf16', etc.
-        gradient_clip_val=cfg.trainer.gradient_clip_val, # gradient clipping value
-        log_every_n_steps=cfg.trainer.log_every_n_steps, # logging frequency
-        check_val_every_n_epoch=cfg.trainer.check_val_every_n_epoch, # validation frequency
-        accumulate_grad_batches=cfg.trainer.accumulate_grad_batches, # gradient accumulation
+        max_epochs=cfg.centralized.trainer.max_epochs, # total number of epochs
+        accelerator=cfg.centralized.trainer.accelerator, # 'auto', 'gpu', 'cpu', 'tpu', etc.
+        devices=cfg.centralized.trainer.devices, # number of devices to use
+        precision=cfg.centralized.trainer.precision,    # 16, 32, 'bf16', etc.
+        gradient_clip_val=cfg.centralized.trainer.gradient_clip_val, # gradient clipping value
+        log_every_n_steps=cfg.centralized.trainer.log_every_n_steps, # logging frequency
+        check_val_every_n_epoch=cfg.centralized.trainer.check_val_every_n_epoch, # validation frequency
+        accumulate_grad_batches=cfg.centralized.trainer.accumulate_grad_batches, # gradient accumulation
         callbacks=callbacks, 
         logger=logger
     )
