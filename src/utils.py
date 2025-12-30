@@ -161,3 +161,103 @@ def build_magnitude_mask(
             mask_ex2[param] = (param.data.abs() > threshold)
 
     return mask_ex2
+
+
+# -----------------------------
+# Extension 3:
+# Magnitude-based pruning
+# -----------------------------
+def build_magnitude_mask3(
+    model: torch.nn.Module,
+    fraction: float
+):
+    """
+    Build the INVERSE of classic magnitude pruning mask.
+
+    - Prunes the HIGHEST-magnitude weights
+    - Keeps the LOWEST-magnitude weights
+
+    Args:
+        model (torch.nn.Module):
+            The neural network model.
+        fraction (float):
+            Fraction of parameters to prune.
+            Example: 0.3 means pruning the largest 30% |w| values.
+
+    Returns:
+        mask (dict):
+            Dictionary mapping parameter -> boolean mask tensor
+            True  = keep
+            False = prune
+    """
+
+    assert 0.0 < fraction < 1.0, "fraction must be in (0, 1)"
+
+    # Collect absolute values of all trainable parameters
+    all_weights = []
+    for param in model.parameters():
+        if param.requires_grad:
+            all_weights.append(param.data.abs().view(-1))
+
+    # Concatenate into one vector
+    all_weights = torch.cat(all_weights)
+
+    # Determine magnitude threshold for pruning
+    k = int(fraction * all_weights.numel())
+    threshold, _ = torch.kthvalue(all_weights, k)
+
+    # Build mask: keep weights with magnitude larger than threshold
+    mask_ex3 = {}
+    for param in model.parameters():
+        if param.requires_grad:
+            mask_ex3[param] = (param.data.abs() <= threshold)
+
+    return mask_ex3
+
+# -----------------------------
+# Extension 4:
+# Random pruning
+# -----------------------------
+def build_random_mask(
+    model: torch.nn.Module,
+    fraction: float,
+    device: torch.device = None
+):
+    """
+    Build a RANDOM pruning mask.
+
+    Args:
+        model (torch.nn.Module):
+            Neural network model.
+        fraction (float):
+            Fraction of parameters to prune.
+            Example: 0.3 means pruning 30% of weights randomly.
+        device (torch.device, optional):
+            Device for mask tensors (cpu / cuda).
+            Defaults to parameter device.
+
+    Returns:
+        mask (dict):
+            Dictionary mapping parameter -> boolean mask tensor
+            True  = keep
+            False = prune
+    """
+
+    assert 0.0 < fraction < 1.0, "fraction must be in (0, 1)"
+
+    mask_random = {}
+
+    for param in model.parameters():
+        if not param.requires_grad:
+            continue
+
+        # Choose device automatically
+        dev = device if device is not None else param.device
+
+        # Random uniform values in [0, 1)
+        rand = torch.rand_like(param, device=dev)
+
+        # Prune fraction of parameters
+        mask_random[param] = rand > fraction
+
+    return mask_random

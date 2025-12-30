@@ -138,6 +138,18 @@ def train(cfg: DictConfig) -> None:
     model=model,
     fraction=cfg.pruning.fraction
     )
+    #EX 3: highest-magnitude weights
+    print("building most-sensitive fisher mask...")
+    mask_ex3 = build_magnitude_mask3(
+        fisher_dict=fisher,
+        fraction=cfg.pruning.fraction
+    )
+    #EX 4: random mask
+    print("building magnitude-based pruning mask...")
+    mask_ex4 = build_random_mask(
+    model=model,
+    fraction=cfg.pruning.fraction
+    )
     # ================================================================
 
     print("starting testing...")
