@@ -5,6 +5,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from .sparse_optimizer import SparseSGDM
+from .pruner import FisherPruner
 
 
 class FedAvg:
@@ -19,6 +21,9 @@ class FedAvg:
         momentum: float = 0.9,
         weight_decay: float = 0,
         device = None,
+        use_sparse: bool = False,
+        sparsity_level: float = 0.5,
+        num_calibration_rounds: int = 3,
     ):
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.global_model = model.to(self.device)
@@ -32,8 +37,37 @@ class FedAvg:
         self.lr = lr
         self.momentum = momentum
         self.weight_decay = weight_decay
+
+        self.use_sparse = use_sparse
+        self.sparsity_level = sparsity_level
+        self.num_calibration_rounds = num_calibration_rounds
+        self.mask_by_name = None
         
         self.history = {'round': [], 'val_loss': [], 'val_acc': [], 'test_loss': [], 'test_acc': []}
+
+
+    def _compute_mask(self):
+        pruner = FisherPruner(sparsity_level=self.sparsity_level, use_least_sensitive=True)
+        calibration_loader = self.datamodule.val_dataloader()
+        
+        self.mask_by_name = pruner.compute_mask(
+            self.global_model, 
+            calibration_loader, 
+            self.device, 
+            num_rounds=self.num_calibration_rounds
+        )
+
+    def _get_param_mask(self, model: nn.Module) -> dict:
+        if self.mask_by_name is None:
+            return None
+        return {
+            p: self.mask_by_name[name].to(self.device)
+            for name, p in model.named_parameters()
+            if name in self.mask_by_name
+        }
+
+
+
 
     def _select_clients(self, round_idx: int) -> List[int]:
         # getting which clients should train each round, random for now
@@ -46,9 +80,18 @@ class FedAvg:
         local_model.train()
 
         params = [p for p in local_model.parameters() if p.requires_grad]
-        optimizer = torch.optim.SGD(
-            params, lr=self.lr, momentum=self.momentum, weight_decay=self.weight_decay
-        )
+        
+        if self.use_sparse and self.mask_by_name is not None:
+            optimizer = SparseSGDM(
+                params, lr=self.lr, momentum=self.momentum,
+                weight_decay=self.weight_decay,
+                mask=self._get_param_mask(local_model)
+            )
+        else:
+            optimizer = torch.optim.SGD(
+                params, lr=self.lr, momentum=self.momentum,
+                weight_decay=self.weight_decay
+            )
 
         dataloader = self.datamodule.get_client_dataloader(client_id)
         num_samples = self.datamodule.get_client_sample_count(client_id)
@@ -101,6 +144,10 @@ class FedAvg:
         return checkpoint['round']
 
     def fit(self, eval_every: int = 10, checkpoint_path = None, start_round: int = 0):
+        if self.use_sparse and self.mask_by_name is None:
+            print(f"Calibrating gradient mask")
+            self._compute_mask()
+        
         for round_idx in tqdm(range(start_round, self.num_rounds), desc="FedAvg"):
             # Local training
             client_states, client_weights = [], []

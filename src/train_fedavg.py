@@ -55,6 +55,10 @@ def train(cfg: DictConfig) -> None:
         lr=cfg.optimizer.lr,
         momentum=cfg.optimizer.momentum,
         weight_decay=cfg.optimizer.weight_decay,
+        use_sparse=cfg.federated.use_sparse,
+        sparsity_level=cfg.federated.sparsity_level,
+        num_calibration_rounds=cfg.federated.num_calibration_rounds
+
     )
     
     # check for resume

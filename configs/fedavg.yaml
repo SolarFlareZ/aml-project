@@ -13,6 +13,11 @@ federated:
   sharding: iid
   num_classes_per_client: 10  # only used when sharding: shard
 
+  # Task arithmetic
+  use_sparse: false
+  sparsity_level: 0.5
+  num_calibration_rounds: 3
+
 logging:
   eval_every: 10
   checkpoint_every: 50 # not used...
