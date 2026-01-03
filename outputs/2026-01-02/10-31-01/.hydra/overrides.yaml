@@ -1,0 +1,3 @@
+- trainer.accelerator='gpu'
+- trainer.devices=1
+- trainer.precision='16-mixed'

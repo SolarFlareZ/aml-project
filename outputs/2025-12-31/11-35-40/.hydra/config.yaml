@@ -1,0 +1,33 @@
+experiment_name: fl_task_arithmetic
+seed: 42
+data:
+  data_dir: ./data
+  batch_size: 64
+  num_workers: 0
+  val_split: 0.1
+  fl_clients: 100
+  fl_rounds: 5
+  client_frac: 0.4
+  local_epochs: 1
+  iid: true
+  non_iid_classes: 1
+  image_size: 224
+model:
+  num_classes: 100
+  freeze_backbone: true
+  image_size: 224
+trainer:
+  accelerator: gpu
+  devices: 1
+  precision: 32
+  val_check_interval: 1
+optimizer:
+  lr: 0.01
+  momentum: 0.9
+  weight_decay: 0.0005
+task_arithmetic:
+  alpha: 0.4
+pruning:
+  sparsity: 0.5
+logging:
+  log_dir: ./results/logs

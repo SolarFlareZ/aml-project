@@ -1,0 +1,2 @@
+- trainer.accelerator=gpu
+- data.non_iid_classes=1

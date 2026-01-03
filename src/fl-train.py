@@ -1,203 +1,201 @@
-import os
-import sys
-import random
-import copy
 import logging
-from typing import Dict, List, Optional
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-import hydra
+import os
+import copy
+import random
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
+import wandb
+import hydra
 from omegaconf import DictConfig, OmegaConf
 from hydra.utils import get_original_cwd
 from torch.utils.data import DataLoader
+from sklearn.linear_model import RidgeClassifier  # type: ignore
+import numpy as np
 
 # Import components
-from pruner import FisherPruner
-from datamodule import CIFAR100DataModule
-from model import DinoClassifier
-from sparse_optimizer import SparseSGDM  # Ensure this is imported
+from src.pruner import FisherPruner
+from src.datamodule import CIFAR100DataModule
+from src.model import DinoClassifier
+from src.sparse_optimizer import SparseSGDM 
 
-# Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# --- STEP 0: Closed-Form Initialization (Ridge) ---
+
+def initialize_with_ridge_step_0(model: nn.Module, datamodule: pl.LightningDataModule, device: torch.device):
+    """
+    Identifies 'Step 0': Instead of a random head, we use a closed-form Ridge Regression
+    solution to obtain a perfect starting point for the classifier.
+    """
+    logger.info("🎯 Executing Step 0: Ridge Regression Initialization...")
+    model.eval()
+    model.to(device)
+    
+    features, labels = [], []
+    train_loader = datamodule.train_dataloader() # Use standard train loader
+    
+    with torch.no_grad():
+        for i, (inputs, targets) in enumerate(train_loader):
+            inputs = inputs.to(device)
+            # Extract features from backbone
+            feat = model.backbone(inputs)
+            features.append(feat.cpu().numpy())
+            labels.append(targets.numpy())
+            if i > 50: break # Use a subset for speed, or remove for full Ridge
+
+    X = np.concatenate(features, axis=0)
+    y = np.concatenate(labels, axis=0)
+
+    # Solve Ridge: (X^T X + alpha*I)^-1 X^T y
+    ridge = RidgeClassifier(alpha=1.0)
+    ridge.fit(X, y)
+
+    # Transfer weights to the model's classifier head
+    # Note: Assumes classifier is a single Linear layer. Adjust if MLP.
+    with torch.no_grad():
+        model.classifier.weight.copy_(torch.from_numpy(ridge.coef_))
+        model.classifier.bias.copy_(torch.from_numpy(ridge.intercept_))
+    
+    # FREEZE the head for the rest of the experiment as per TaLoS requirements
+    for param in model.classifier.parameters():
+        param.requires_grad = False
+        
+    logger.info("✅ Step 0 Complete. Head initialized and frozen.")
+
 # --- Helper Functions ---
 
-def get_dataloader_for_client(dataset, batch_size: int, num_workers: int) -> DataLoader:
-    pin_memory = num_workers > 0 and torch.cuda.is_available()
-    return DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        drop_last=True,
-    )
+def get_dataloader_for_client(dataset, batch_size, num_workers):
+    return DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
 
-def aggregate_models(client_deltas: List[Dict[str, torch.Tensor]], client_data_sizes: List[int]) -> Dict[str, torch.Tensor]:
-    if not client_deltas:
-        return {}
-    
-    total_data_size = sum(client_data_sizes)
-    aggregated_delta = {name: torch.zeros_like(param) for name, param in client_deltas[0].items()}
-
+def aggregate_models(client_deltas, client_data_sizes):
+    total_size = sum(client_data_sizes)
+    agg_delta = {name: torch.zeros_like(p) for name, p in client_deltas[0].items()}
     for k, delta in enumerate(client_deltas):
-        weight_factor = client_data_sizes[k] / total_data_size
-        for name, param_delta in delta.items():
-            aggregated_delta[name].add_(param_delta * weight_factor)
-            
-    return aggregated_delta
+        weight = client_data_sizes[k] / total_size
+        for name in agg_delta:
+            agg_delta[name].add_(delta[name] * weight)
+    return agg_delta
 
-def local_train(
-    model: nn.Module,
-    dataloader: DataLoader,
-    local_epochs: int,
-    device: torch.device,
-    optimizer: torch.optim.Optimizer
-) -> Dict[str, torch.Tensor]:
+def local_train(model, dataloader, local_epochs, device, optimizer):
     model.to(device)
-    model.train()
+    model.train()  # DinoClassifier.train() automatically handles backbone eval mode if freeze_backbone=True
+    # For sparse fine-tuning with freeze_backbone=False, backbone stays in train mode
     criterion = nn.CrossEntropyLoss()
-    
-    for epoch in range(local_epochs):
+    for _ in range(local_epochs):
         for inputs, targets in dataloader:
             inputs, targets = inputs.to(device), targets.to(device)
             optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
+            loss = criterion(model(inputs), targets)
             loss.backward()
-            optimizer.step() # This now uses SparseSGDM logic
-            
-    return model.cpu().state_dict()
+            optimizer.step()
+    return model.state_dict()
 
-
-# --- Main FL Training Loop ---
+# --- Main Training ---
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def fl_train(cfg: DictConfig) -> None:
-    logger.info("Starting Federated Learning Training...")
+    logger.info("🚀 Starting TaLoS Federated Learning...")
+    wandb.init(project="TaLoS-Project", config=OmegaConf.to_container(cfg, resolve=True))
     
-    # Configure environment
     original_cwd = get_original_cwd()
-    data_dir = os.path.join(original_cwd, cfg.data.data_dir)
-    pl.seed_everything(cfg.seed, workers=True)
-    device = torch.device('cuda' if torch.cuda.is_available() and cfg.trainer.accelerator == 'gpu' else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    pl.seed_everything(cfg.seed)
 
-    # 1. Initialization
     datamodule = CIFAR100DataModule(
-        data_dir=data_dir,
+        data_dir=os.path.join(original_cwd, cfg.data.data_dir),
         batch_size=cfg.data.batch_size,
         num_workers=cfg.data.num_workers,
-        val_split=cfg.data.val_split,
-        seed=cfg.seed,
-        image_size=cfg.model.image_size,
-        fl_clients=cfg.data.fl_clients,
-        iid=cfg.data.iid,
-        non_iid_classes=cfg.data.non_iid_classes
+        num_clients=cfg.data.fl_clients,
+        num_classes_per_client=cfg.data.non_iid_classes,
+        image_size=224
     )
-    datamodule.prepare_data()
     datamodule.setup(stage='fit')
-    
-    client_data_sizes = [len(ds) for ds in datamodule.client_datasets]
-    
+    client_datasets = datamodule.get_client_datasets()
+
+    # 1. Model & Step 0 Initialization
     global_model = DinoClassifier(
         num_classes=cfg.model.num_classes,
-        lr=cfg.optimizer.lr,
-        freeze_backbone=cfg.model.freeze_backbone,
+        freeze_backbone=cfg.model.freeze_backbone
     ).to(device)
+    initialize_with_ridge_step_0(global_model, datamodule, device)
 
-    # 2. Compute Fisher Mask (One-time Calibration)
-    # Using 'use_least_sensitive=True' for Task Arithmetic/Model Editing
-    pruner = FisherPruner(sparsity_level=cfg.pruning.sparsity, use_least_sensitive=True)
-    val_dataloader = datamodule.val_dataloader()
-    
-    logger.info("Calibrating Fisher Mask...")
-    # Generate mask (returns dict mapping Parameter objects to 1/0 tensors)
-    global_mask = pruner.compute_mask(global_model, val_dataloader, device)
+    # 2. Step 1: Multi-Round Calibration
+    mask_path = os.path.join(original_cwd, "masks/fisher_mask.pt")
+    if os.path.exists(mask_path):
+        name_mask = torch.load(mask_path, map_location=device)
+    else:
+        logger.info("🔍 Step 1: Multi-Round Fisher Calibration...")
+        pruner = FisherPruner(sparsity_level=cfg.pruning.sparsity)
+        # Use the configuration to set calibration rounds (required by PDF)
+        num_cal_rounds = cfg.pruning.get("num_calibration_rounds", 3) 
+        name_mask = pruner.compute_mask(
+            global_model, 
+            datamodule.val_dataloader(), 
+            device,
+            num_rounds=num_cal_rounds
+        )
+        torch.save(name_mask, mask_path)
 
-    # 3. Federated Training Loop
-    num_rounds = cfg.data.fl_rounds
-    C = cfg.data.client_frac
-    K = cfg.data.fl_clients
-    alpha = cfg.task_arithmetic.alpha # Scaling factor from config
+    # 3. Step 2: Federated Training Loop
+    for round_t in range(cfg.data.fl_rounds):
+        selected_indices = random.sample(range(cfg.data.fl_clients), max(1, int(cfg.data.client_frac * cfg.data.fl_clients)))
+        local_updates, sizes = [], []
+        global_w = {k: v.clone() for k, v in global_model.state_dict().items()}
 
-    for round_t in range(num_rounds):
-        logger.info(f"--- Round {round_t+1}/{num_rounds} ---")
-        
-        num_selected = max(1, int(C * K))
-        selected_indices = random.sample(range(K), num_selected)
-        
-        local_weights_updates = [] 
-        selected_client_sizes = []
-        
-        # Current Global State
-        global_weights = copy.deepcopy(global_model.state_dict())
-
-        for client_idx in selected_indices:
-            # Setup Local Model
+        for idx in selected_indices:
             local_model = copy.deepcopy(global_model)
-            local_model.load_state_dict(global_weights)
-
-            # --- INTEGRATION OF SPARSESGD ---
-            # Instead of standard SGD, we use the Sparse version with the global mask
-            optimizer = SparseSGDM(
-                local_model.parameters(),
-                lr=cfg.optimizer.lr,
-                momentum=cfg.optimizer.momentum,
-                weight_decay=cfg.optimizer.weight_decay,
-                mask=global_mask # This enforces the sparsity DURING training
-            )
-
-            client_dataloader = get_dataloader_for_client(
-                datamodule.client_datasets[client_idx], 
-                cfg.data.batch_size, 
-                cfg.data.num_workers
-            )
-
-            # Local Training
-            updated_weights = local_train(
-                local_model, 
-                client_dataloader, 
-                cfg.data.local_epochs, 
-                device,
-                optimizer
-            )
-
-            # Calculate Delta: (W_local - W_global)
-            client_delta = {name: updated_weights[name] - global_weights[name].cpu() 
-                           for name in global_weights.keys()}
             
-            local_weights_updates.append(client_delta)
-            selected_client_sizes.append(client_data_sizes[client_idx])
+            # Map mask to parameters for SparseSGDM
+            p_mask = {p: name_mask[n].to(device) for n, p in local_model.named_parameters() if n in name_mask}
+            
+            optimizer = SparseSGDM(
+                local_model.parameters(), 
+                lr=cfg.optimizer.lr, 
+                mask=p_mask
+            )
+            
+            loader = get_dataloader_for_client(client_datasets[idx], cfg.data.batch_size, cfg.data.num_workers)
+            updated_w = local_train(local_model, loader, cfg.data.local_epochs, device, optimizer)
 
-        # 4. Server Aggregation & Task Arithmetic Update
-        # Δ_avg = sum( (n_k/N) * Δ_k )
-        aggregated_delta = aggregate_models(local_weights_updates, selected_client_sizes)
-        
-        # W_next = W_curr + (alpha * Δ_avg)
+            # Cleanup client model and optimizer
+            del local_model, optimizer
+            torch.cuda.empty_cache() if torch.cuda.is_available() else None
+
+            # Task Vector calculation (Arithmetic)
+            delta = {n: (updated_w[n] - global_w[n]).cpu() for n in global_w.keys()}
+            local_updates.append(delta)
+            sizes.append(len(client_datasets[idx]))
+
+        # Aggregation & Global Apply
+        agg_delta = aggregate_models(local_updates, sizes)
         with torch.no_grad():
-            for name, param in global_model.named_parameters():
-                if name in aggregated_delta:
-                    # Apply Task Arithmetic scaling (alpha)
-                    update = aggregated_delta[name].to(device) * alpha
-                    param.add_(update)
+            for n, p in global_model.named_parameters():
+                if n in agg_delta:
+                    p.add_(agg_delta[n].to(device) * cfg.task_arithmetic.alpha)
 
-        # 5. Periodic Validation
-        if (round_t + 1) % cfg.trainer.val_check_interval == 0:
-            global_model.eval()
-            correct, total = 0, 0
-            with torch.no_grad():
-                for inputs, targets in val_dataloader:
-                    inputs, targets = inputs.to(device), targets.to(device)
-                    outputs = global_model(inputs)
-                    _, pred = outputs.max(1)
-                    total += targets.size(0)
-                    correct += pred.eq(targets).sum().item()
-            logger.info(f"Round {round_t+1} Val Acc: {100.*correct/total:.2f}%")
+        # 7. Validation
+        global_model.eval()
+        correct, total = 0, 0
+        with torch.no_grad():
+            for inputs, targets in datamodule.val_dataloader():
+                inputs, targets = inputs.to(device), targets.to(device)
+                outputs = global_model(inputs)
+                acc = (outputs.argmax(1) == targets).float().sum().item()
+                correct += acc
+                total += targets.size(0)
+        
+        accuracy = 100. * correct / total
+        logger.info(f"Round {round_t+1}/{cfg.data.fl_rounds} | Accuracy: {accuracy:.2f}%")
+        wandb.log({"round": round_t + 1, "val_acc": accuracy})
 
-    logger.info("Training Complete.")
+    # Save final model
+    save_path = os.path.join(original_cwd, "results/checkpoints/last.ckpt")
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    torch.save(global_model.state_dict(), save_path)
+    logger.info(f"💾 Final model saved to {save_path}")
+    wandb.finish()
 
 if __name__ == "__main__":
     fl_train()

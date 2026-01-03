@@ -4,76 +4,64 @@ from tqdm import tqdm
 
 class FisherPruner:
     def __init__(self, sparsity_level: float = 0.5, use_least_sensitive: bool = True):
-        """
-        Args:
-            sparsity_level: Fraction of weights to KEEP (set to 1 in mask).
-            use_least_sensitive: If True, keep weights with LOWEST Fisher scores (as per Task Arithmetic).
-                                 If False, keep weights with HIGHEST Fisher scores.
-        """
         self.sparsity_level = sparsity_level
         self.use_least_sensitive = use_least_sensitive
         self.global_mask = {}
 
-    @torch.no_grad()
-    def compute_mask(self, model: nn.Module, dataloader: torch.utils.data.DataLoader, device: torch.device):
+    def compute_mask(self, model: nn.Module, dataloader, device: torch.device, num_rounds: int = 3):
         """
-        Computes the Fisher Information (squared gradients) and creates a binary mask.
+        Step 1: Multi-Round Calibration. 
+        Averages Fisher Information over several rounds to stabilize sensitivity scores. [cite: 53, 69]
         """
         model.to(device)
         model.eval()
         
-        # 1. Accumulate squared gradients (Fisher Information)
-        fisher_dict = {p: torch.zeros_like(p) for p in model.parameters() if p.requires_grad}
+        # Initialize accumulated fisher scores
+        accumulated_fisher = {name: torch.zeros_like(p) for name, p in model.named_parameters() if p.requires_grad}
         criterion = nn.CrossEntropyLoss()
-
-        # Enable grads for the Fisher calculation
-        torch.set_grad_enabled(True)
         
-        print("Computing Fisher Information scores...")
-        for inputs, targets in tqdm(dataloader, desc="Fisher Calibration"):
-            inputs, targets = inputs.to(device), targets.to(device)
+        for r in range(num_rounds):
+            torch.set_grad_enabled(True)
+            current_round_fisher = {name: torch.zeros_like(p) for name, p in model.named_parameters() if p.requires_grad}
+            total_samples = 0
             
-            model.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-            loss.backward()
+            for inputs, targets in tqdm(dataloader, desc=f"Fisher Round {r+1}/{num_rounds}"):
+                inputs, targets = inputs.to(device), targets.to(device)
+                total_samples += inputs.size(0)
+                
+                model.zero_grad()
+                loss = criterion(model(inputs), targets)
+                loss.backward()
 
-            for p in model.parameters():
-                if p.requires_grad and p.grad is not None:
-                    # Fisher estimation: sum of squared gradients
-                    fisher_dict[p] += p.grad.data.pow(2)
+                with torch.no_grad():
+                    for name, p in model.named_parameters():
+                        if name in current_round_fisher and p.grad is not None:
+                            # Accumulate squared gradients for the current round
+                            current_round_fisher[name] += p.grad.data.pow(2) * inputs.size(0)
+            
+            # Average the current round and add to global accumulation
+            with torch.no_grad():
+                for name in accumulated_fisher:
+                    accumulated_fisher[name] += (current_round_fisher[name] / total_samples)
         
-        torch.set_grad_enabled(False)
+        # Step 2: Thresholding after all rounds are averaged [cite: 68, 69]
+        with torch.no_grad():
+            # Final average across rounds
+            for name in accumulated_fisher:
+                accumulated_fisher[name] /= num_rounds
 
-        # 2. Flatten all Fisher scores to find the global threshold
-        all_fisher = torch.cat([f.view(-1) for f in fisher_dict.values()])
-        num_params = all_fisher.numel()
-        k = int(num_params * self.sparsity_level)
+            all_scores = torch.cat([f.view(-1) for f in accumulated_fisher.values()])
+            k = int(all_scores.numel() * self.sparsity_level)
 
-        # 3. Determine threshold based on "least-sensitive" requirement
-        # Task Arithmetic [15] suggests updating least-sensitive parameters to reduce interference [cite: 69]
-        if self.use_least_sensitive:
-            # Keep the smallest Fisher scores
-            threshold = torch.kthvalue(all_fisher, k).values
-            for p, f in fisher_dict.items():
-                self.global_mask[p] = (f <= threshold).float()
-        else:
-            # Keep the largest Fisher scores (standard pruning)
-            threshold = torch.kthvalue(all_fisher, num_params - k + 1).values
-            for p, f in fisher_dict.items():
-                self.global_mask[p] = (f >= threshold).float()
+            if self.use_least_sensitive:
+                # Keep weights with LOWEST Fisher scores (TaLoS default) 
+                threshold = torch.kthvalue(all_scores, k).values
+                for name, f in accumulated_fisher.items():
+                    self.global_mask[name] = (f <= threshold).float().cpu()
+            else:
+                # Guided Extension: Pick most-sensitive 
+                threshold = torch.kthvalue(all_scores, all_scores.numel() - k + 1).values
+                for name, f in accumulated_fisher.items():
+                    self.global_mask[name] = (f >= threshold).float().cpu()
 
-        print(f"Mask calibration complete. Sparsity: {self.sparsity_level}")
         return self.global_mask
-
-    def apply_mask(self, weight_deltas: dict):
-        """
-        Utility to manually apply the mask to a dictionary of weight updates (deltas).
-        Used in the server aggregation step of S-FedAvg.
-        """
-        masked_deltas = {}
-        # Map parameter objects in mask to state_dict names in deltas
-        # This assumes the order of parameters matches the state_dict
-        for (p, mask), (name, delta) in zip(self.global_mask.items(), weight_deltas.items()):
-            masked_deltas[name] = delta * mask.cpu()
-        return masked_deltas

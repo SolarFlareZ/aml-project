@@ -9,13 +9,13 @@ seed: 42
 # Data Configuration
 data:
   data_dir: ./data
-  batch_size: 64         # Reduced for laptop CPU stability
+  batch_size: 32         
   num_workers: 0
   val_split: 0.1
-  fl_clients: 5          # Number of clients
-  fl_rounds: 5           # Number of rounds
-  client_frac: 0.4       # Fraction selected per round (0.4 * 5 = 2 clients)
-  local_epochs: 1
+  fl_clients: 100        # Standard for 100-class problems
+  fl_rounds: 500         # Matches colleague's baseline length
+  client_frac: 0.1       # 10% participation (10 clients per round)
+  local_epochs: 3        # RECOMMENDED: Increased to build a stronger Task Vector
   iid: true
   non_iid_classes: 10
   image_size: 224
@@ -23,19 +23,19 @@ data:
 # Model Configuration
 model:
   num_classes: 100
-  freeze_backbone: true
+  freeze_backbone: false # REQUIRED for TaLoS Sparse Backbone tuning
   image_size: 224
 
 # Trainer Configuration
 trainer:
-  accelerator: cpu       # Set to 'cpu' since you are on a laptop
+  accelerator: gpu       
   devices: 1
-  precision: 32          # Use 32 for CPU
-  val_check_interval: 1  # Matches your script's cfg.trainer.val_check_interval
+  precision: 16-mixed    # Faster training and less VRAM on RTX 4050
+  val_check_interval: 10 # Check every 10 rounds to save time
 
 # Optimizer Configuration
 optimizer:
-  lr: 0.01
+  lr: 1e-3
   momentum: 0.9
   weight_decay: 5e-4
 
@@ -43,7 +43,8 @@ optimizer:
 task_arithmetic:
   alpha: 0.4
 pruning:
-  sparsity: 0.5
+  sparsity: 0.5          # Matches your 152-layer Fisher Mask
+  num_calibration_rounds: 3  # Number of calibration rounds for mask generation
 
 # Logging
 logging:

@@ -1,0 +1,44 @@
+{
+  "os":  "Windows-11-10.0.26200-SP0",
+  "python":  "CPython 3.13.4",
+  "startedAt":  "2025-12-31T10:31:08.711627Z",
+  "args":  [
+    "trainer.accelerator=gpu",
+    "data.non_iid_classes=1"
+  ],
+  "program":  "N:\\Master\\3\\AML\\Project\\Git\\aml-project\\src\\fl-train.py",
+  "codePath":  "src\\fl-train.py",
+  "codePathLocal":  "src\\fl-train.py",
+  "git":  {
+    "remote":  "https://github.com/SolarFlareZ/aml-project.git",
+    "commit":  "6aacce984a9569c705df3199699e59be863d62cb"
+  },
+  "email":  "hashemi.nazanin@gmail.com",
+  "root":  "N:\\Master\\3\\AML\\Project\\Git\\aml-project",
+  "host":  "Nazanin",
+  "executable":  "C:\\Python313\\python.exe",
+  "cpu_count":  14,
+  "cpu_count_logical":  20,
+  "gpu":  "NVIDIA GeForce RTX 4050 Laptop GPU",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "107477987328",
+      "used":  "95116857344"
+    }
+  },
+  "memory":  {
+    "total":  "16780513280"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 4050 Laptop GPU",
+      "memoryTotal":  "6439305216",
+      "cudaCores":  2560,
+      "architecture":  "Ada",
+      "uuid":  "GPU-d3fa754d-863f-246d-3d8a-f0461df6d231"
+    }
+  ],
+  "cudaVersion":  "12.7",
+  "writerId":  "l6p9z25zcabgfn1odi8xawmjs0jltq88"
+}
