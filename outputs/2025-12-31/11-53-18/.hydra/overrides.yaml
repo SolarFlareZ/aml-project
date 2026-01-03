@@ -1,3 +1,0 @@
-- trainer.accelerator=gpu
-- data.non_iid_classes=1
-- +task_arithmetic.sparsity=0.9

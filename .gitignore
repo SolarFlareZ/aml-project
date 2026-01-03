@@ -205,3 +205,29 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project-specific: Large data files and model checkpoints
+# Data files (will be downloaded automatically)
+data/cifar-100-python/
+data/*.tar.gz
+data/*.zip
+
+# Model checkpoints (large binary files)
+checkpoints/
+results/checkpoints/
+*.ckpt
+
+# Masks (large binary files)
+masks/
+*.pt
+
+# Output logs and experiments
+outputs/
+logs/
+
+# Wandb logs
+wandb/
+
+# Virtual environments
+new_env/
+.venv_312/

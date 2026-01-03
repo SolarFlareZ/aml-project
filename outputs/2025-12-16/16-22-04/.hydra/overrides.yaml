@@ -1,4 +1,0 @@
-- trainer.accelerator=cpu
-- trainer.max_epochs=100
-- scheduler.name=cosine
-- experiment_name=centralized_baseline_cpu
