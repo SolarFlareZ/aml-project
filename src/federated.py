@@ -24,6 +24,7 @@ class FedAvg:
         use_sparse: bool = False,
         sparsity_level: float = 0.5,
         num_calibration_rounds: int = 3,
+        sparse_strategy: str = "least_sensitive"
     ):
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.global_model = model.to(self.device)
@@ -41,13 +42,14 @@ class FedAvg:
         self.use_sparse = use_sparse
         self.sparsity_level = sparsity_level
         self.num_calibration_rounds = num_calibration_rounds
+        self.sparse_strategy = sparse_strategy
         self.mask_by_name = None
         
         self.history = {'round': [], 'val_loss': [], 'val_acc': [], 'test_loss': [], 'test_acc': []}
 
 
     def _compute_mask(self):
-        pruner = FisherPruner(sparsity_level=self.sparsity_level, use_least_sensitive=True)
+        pruner = FisherPruner(sparsity_level=self.sparsity_level, strategy=self.sparse_strategy)
         calibration_loader = self.datamodule.val_dataloader()
         
         self.mask_by_name = pruner.compute_mask(

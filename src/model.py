@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 from torchmetrics import Accuracy
+from sklearn.linear_model import RidgeClassifier
+import numpy as np
 
 # Model definition using DINO backbone
 class DinoClassifier(pl.LightningModule):    
@@ -51,8 +53,12 @@ class DinoClassifier(pl.LightningModule):
         2. Classify features using the linear classifier.
         3. Return class logits.
         """
-        with torch.no_grad(): # this does not consider freeze=false, need fix
+        if self.hparams.freeze_backbone:
+            with torch.no_grad():
+                features = self.backbone(x)
+        else:
             features = self.backbone(x)
+    
         return self.classifier(features)
     
     # Training step
@@ -129,3 +135,31 @@ class DinoClassifier(pl.LightningModule):
                 'interval': 'epoch',
             }
         } # read docs, if no scheduler, only return optimizer
+    
+
+    def initialize_head_with_ridge(self, dataloader, device):
+        self.eval()
+        self.to(device)
+        features, labels = [], []
+
+        with torch.no_grad():
+            for inputs, targets in dataloader:
+                inputs = inputs.to(device)
+                # Extract features from backbone
+                feat = self.backbone(inputs)
+                features.append(feat.cpu().numpy())
+                labels.append(targets.numpy())
+        
+        X = np.concatenate(features)
+        y = np.concatenate(labels)
+
+        ridge = RidgeClassifier(alpha=1.0)
+        ridge.fit(X, y)
+
+        with torch.no_grad(): # double check type conversion, unsure about that
+            self.classifier.weight.copy_(torch.from_numpy(ridge.coef_.astype(np.float32)))
+            self.classifier.bias.copy_(torch.from_numpy(ridge.intercept_.astype(np.float32)))
+
+        # Freezing head
+        for param in self.classifier.parameters():
+            param.requires_grad = False

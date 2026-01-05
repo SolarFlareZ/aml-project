@@ -115,42 +115,6 @@ def train(cfg: DictConfig) -> None:
     print("starting training...")
     trainer.fit(model, datamodule, ckpt_path=ckpt_path)
     
-    # ================================================================
-    # EXTENSIONS
-    # ================================================================
-    
-    print("computing fisher information...")
-    fisher = compute_fisher_importance(
-        model=model,
-        dataloader=datamodule.train_dataloader(),
-        loss_fn=model.criterion,
-        device=model.device
-    )
-    #EX 1: most-sensitive weights
-    print("building most-sensitive fisher mask...")
-    mask_ex1 = build_fisher_mask_most_sensitive(
-        fisher_dict=fisher,
-        fraction=cfg.pruning.fraction
-    )
-    #EX 2: lowest-magnitude weights
-    print("building magnitude-based pruning mask...")
-    mask_ex2 = build_magnitude_mask(
-    model=model,
-    fraction=cfg.pruning.fraction
-    )
-    #EX 3: highest-magnitude weights
-    print("building most-sensitive fisher mask...")
-    mask_ex3 = build_magnitude_mask3(
-        fisher_dict=fisher,
-        fraction=cfg.pruning.fraction
-    )
-    #EX 4: random mask
-    print("building magnitude-based pruning mask...")
-    mask_ex4 = build_random_mask(
-    model=model,
-    fraction=cfg.pruning.fraction
-    )
-    # ================================================================
 
     print("starting testing...")
     trainer.test(model, datamodule, ckpt_path='best') # test using the best checkpoint

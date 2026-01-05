@@ -25,6 +25,7 @@ def train(cfg: DictConfig) -> None:
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
     
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     torch.manual_seed(cfg.seed)
     
     datamodule = FederatedCIFAR100DataModule(
@@ -45,6 +46,10 @@ def train(cfg: DictConfig) -> None:
         num_classes=cfg.model.num_classes,
         freeze_backbone=cfg.model.freeze_backbone,
     )
+
+    if cfg.federated.use_sparse:
+        model.initialize_head_with_ridge(datamodule.train_dataloader(), device)
+
     
     fedavg = FedAvg(
         model=model,
@@ -57,7 +62,8 @@ def train(cfg: DictConfig) -> None:
         weight_decay=cfg.optimizer.weight_decay,
         use_sparse=cfg.federated.use_sparse,
         sparsity_level=cfg.federated.sparsity_level,
-        num_calibration_rounds=cfg.federated.num_calibration_rounds
+        num_calibration_rounds=cfg.federated.num_calibration_rounds,
+        sparse_strategy=cfg.federated.sparse_strategy
 
     )
     

@@ -108,12 +108,7 @@ class CIFAR100DataModule(BaseCIFAR100DataModule):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.save_hyperparameters()
-    
-    def prepare_data(self) -> None:
-        # put here as setup is ran once per process i think, this should solve that
-        datasets.CIFAR100(self.data_dir, train=True, download=True)
-        datasets.CIFAR100(self.data_dir, train=False, download=True)
-    
+        
     def setup(self, stage: Optional[str] = None) -> None:
         super().setup(stage)
         if stage == 'fit' or stage is None:
@@ -223,35 +218,11 @@ class FederatedCIFAR100DataModule(BaseCIFAR100DataModule):
         return dict(zip(unique.tolist(), counts.tolist()))
     
 
-
-    # temp AI, this simulates real world scenarios better...
-    def _dirichlet_non_iid_sharding(self, targets: np.ndarray, alpha: float = 0.5) -> Dict[int, List[int]]:
-        rng = np.random.default_rng(self.seed)
-        num_classes = len(np.unique(targets))
-        
-        # Get indices for each class
-        class_indices = [np.where(targets == c)[0] for c in range(num_classes)]
-        
-        client_indices = {i: [] for i in range(self.num_clients)}
-        
-        # For each class, distribute its samples across clients using Dirichlet
-        for c_idx in class_indices:
-            # Sample proportions from Dirichlet distribution
-            proportions = rng.dirichlet(np.repeat(alpha, self.num_clients))
-            
-            # Shuffle class samples
-            rng.shuffle(c_idx)
-            
-            # Split according to proportions
-            proportions = (np.cumsum(proportions) * len(c_idx)).astype(int)[:-1]
-            splits = np.split(c_idx, proportions)
-            
-            # Assign to clients
-            for client_id, split in enumerate(splits):
-                client_indices[client_id].extend(split.tolist())
-        
-        # Shuffle each client's data
-        for client_id in client_indices:
-            rng.shuffle(client_indices[client_id])
-        
-        return client_indices
+    def train_dataloader(self) -> DataLoader:
+        """just used for ridge, might change to use per client data"""
+        all_indices = [idx for indices in self.client_indices.values() for idx in indices]
+        full_dataset = TransformSubset(self.full_train, all_indices, self.test_transform)
+        return DataLoader(
+            full_dataset, batch_size=self.batch_size, shuffle=False,
+            num_workers=self.num_workers, pin_memory=True,
+        )

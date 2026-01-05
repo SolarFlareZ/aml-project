@@ -15,6 +15,7 @@ federated:
 
   # Task arithmetic
   use_sparse: false
+  sparse_strategy: "least_sensitive"
   sparsity_level: 0.5
   num_calibration_rounds: 3
 
