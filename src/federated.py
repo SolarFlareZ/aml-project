@@ -164,15 +164,12 @@ class FedAvg:
             # Evaluate
             if (round_idx + 1) % eval_every == 0:
                 val_loss, val_acc = self._evaluate(self.datamodule.val_dataloader())
-                test_loss, test_acc = self._evaluate(self.datamodule.test_dataloader())
                 
                 self.history['round'].append(round_idx + 1)
                 self.history['val_loss'].append(val_loss)
                 self.history['val_acc'].append(val_acc)
-                self.history['test_loss'].append(test_loss)
-                self.history['test_acc'].append(test_acc)
-                
-                tqdm.write(f"Round {round_idx+1}: val_acc={val_acc:.4f}, test_acc={test_acc:.4f}")
+    
+                tqdm.write(f"Round {round_idx+1}: val_acc={val_acc:.4f}")
             
             # Checkpoint
             if checkpoint_path and (round_idx + 1) % 50 == 0:
@@ -183,3 +180,6 @@ class FedAvg:
                 }, f"{checkpoint_path}_round{round_idx+1}.pt")
         
         return self.history
+    
+    def evaluate_test(self) -> tuple[float, float]:
+        return self._evaluate(self.datamodule.test_dataloader())
