@@ -81,14 +81,19 @@ def train(cfg: DictConfig) -> None:
         eval_every=cfg.logging.eval_every,
         checkpoint_path=checkpoint_path,
     )
+
+    print("Evaluating on test set...")
+    test_loss, test_acc = fedavg.evaluate_test()
     
     # save results
     results = {
         'config': OmegaConf.to_container(cfg),
         'history': history,
         'final_val_acc': history['val_acc'][-1],
-        'final_test_acc': history['test_acc'][-1],
+        'final_test_loss': test_loss,
+        'final_test_acc': test_acc,
     }
+    
     results_path = os.path.join(output_dir, f"{cfg.experiment_name}.json")
     with open(results_path, 'w') as f:
         json.dump(results, f, indent=2)
@@ -99,7 +104,7 @@ def train(cfg: DictConfig) -> None:
     
     print("training complete")
     print(f"final val_acc: {history['val_acc'][-1]}")
-    print(f"final test_acc: {history['test_acc'][-1]}")
+    print(f"final test_acc: {test_acc}")
     print(f"results saved to {results_path}")
 
 

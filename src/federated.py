@@ -45,7 +45,7 @@ class FedAvg:
         self.sparse_strategy = sparse_strategy
         self.mask_by_name = None
         
-        self.history = {'round': [], 'val_loss': [], 'val_acc': [], 'test_loss': [], 'test_acc': []}
+        self.history = {'round': [], 'val_loss': [], 'val_acc': []}
 
 
     def _compute_mask(self):
