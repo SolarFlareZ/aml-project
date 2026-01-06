@@ -69,20 +69,27 @@ class FisherPruner:
     def _random_mask(self, model):
         for name, p in model.named_parameters():
             if p.requires_grad:
-                self.global_mask[name] = (torch.rand_like(p) > self.sparsity_level).float().cpu()
+                rand = torch.rand_like(p)
+                self.global_mask[name] = (rand > self.sparsity_level).float().cpu()
         return self.global_mask
     
     def _magnitude_mask(self, model):
-        mags = {name: p.data.abs() for name, p in model.named_parameters() if p.requires_grad}
-        all_mags = torch.cat([m.view(-1) for m in mags.values()])
-        k = int(all_mags.numel() * self.sparsity_level)
+        all_weights = []
+        param_names = []
+        for name, p in model.named_parameters():
+            if p.requires_grad:
+                all_weights.append(p.data.abs().view(-1))
+                param_names.append(name)
         
-        if self.strategy == "lowest_magnitude":
-            threshold = torch.kthvalue(all_mags, k).values
-            for name, m in mags.items():
-                self.global_mask[name] = (m > threshold).float().cpu()
-        else: # highest_magnitude
-            threshold = torch.kthvalue(all_mags, all_mags.numel() - k + 1).values
-            for name, m in mags.items():
-                self.global_mask[name] = (m <= threshold).float().cpu()
+        all_weights = torch.cat(all_weights)
+        k = int(self.sparsity_level * all_weights.numel())
+        threshold, _ = torch.kthvalue(all_weights, k)
+        
+        for name, p in model.named_parameters():
+            if p.requires_grad:
+                if self.strategy == "lowest_magnitude":
+                    self.global_mask[name] = (p.data.abs() > threshold).float().cpu()
+                else:
+                    self.global_mask[name] = (p.data.abs() <= threshold).float().cpu()
+        
         return self.global_mask
