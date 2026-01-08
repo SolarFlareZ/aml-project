@@ -13,7 +13,7 @@ data:
 # Model
 model:
   num_classes: 100
-  freeze_backbone: true
+  freeze_backbone: false
   image_size: 224
 
 # Optimizer

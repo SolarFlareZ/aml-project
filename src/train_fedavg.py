@@ -48,6 +48,7 @@ def train(cfg: DictConfig) -> None:
     )
 
     if cfg.federated.use_sparse:
+        print('init ridge')
         model.initialize_head_with_ridge(datamodule.train_dataloader(), device)
 
     print("training")
