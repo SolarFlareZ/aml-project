@@ -24,7 +24,8 @@ class FedAvg:
         use_sparse: bool = False,
         sparsity_level: float = 0.5,
         num_calibration_rounds: int = 3,
-        sparse_strategy: str = "least_sensitive"
+        sparse_strategy: str = "least_sensitive",
+        alpha: float = 1.0
     ):
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.global_model = model.to(self.device)
@@ -43,6 +44,7 @@ class FedAvg:
         self.sparsity_level = sparsity_level
         self.num_calibration_rounds = num_calibration_rounds
         self.sparse_strategy = sparse_strategy
+        self.alpha = alpha
         self.mask_by_name = None
         
         self.history = {'round': [], 'val_loss': [], 'val_acc': []}
@@ -116,14 +118,22 @@ class FedAvg:
 
     def _aggregate(self, client_states: List[dict], client_weights: List[int]):
         total = sum(client_weights)
-        aggregated = {}
+        global_state = self.global_model.state_dict()
         
+        aggregated_delta = {}
         for key in client_states[0]:
-            aggregated[key] = sum(
-                state[key] * (w / total) for state, w in zip(client_states, client_weights)
+            delta = sum(
+                (state[key] - global_state[key]) * (w / total) 
+                for state, w in zip(client_states, client_weights)
             )
+            aggregated_delta[key] = delta
         
-        self.global_model.load_state_dict(aggregated)
+        new_state = {
+            key: global_state[key] + self.alpha * aggregated_delta[key]
+            for key in global_state
+        }
+        
+        self.global_model.load_state_dict(new_state)
 
     @torch.no_grad()
     def _evaluate(self, dataloader: DataLoader) -> tuple[float, float]:

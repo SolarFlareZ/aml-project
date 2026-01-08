@@ -63,7 +63,8 @@ def train(cfg: DictConfig) -> None:
         use_sparse=cfg.federated.use_sparse,
         sparsity_level=cfg.federated.sparsity_level,
         num_calibration_rounds=cfg.federated.num_calibration_rounds,
-        sparse_strategy=cfg.federated.sparse_strategy
+        sparse_strategy=cfg.federated.sparse_strategy,
+        alpha=cfg.federated.alpha
 
     )
     
