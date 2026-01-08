@@ -24,7 +24,7 @@ class FedAvg:
         use_sparse: bool = False,
         sparsity_level: float = 0.5,
         num_calibration_rounds: int = 3,
-        sparse_strategy: str = "least_sensitive"
+        sparse_strategy: str = "random"
     ):
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.global_model = model.to(self.device)
