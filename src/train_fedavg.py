@@ -50,7 +50,7 @@ def train(cfg: DictConfig) -> None:
     if cfg.federated.use_sparse:
         model.initialize_head_with_ridge(datamodule.train_dataloader(), device)
 
-    
+    print("training")
     fedavg = FedAvg(
         model=model,
         datamodule=datamodule,
