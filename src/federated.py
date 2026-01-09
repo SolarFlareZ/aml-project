@@ -80,11 +80,10 @@ class FedAvg:
         return indices[:self.clients_per_round].tolist()
     
     def _train_client(self, client_id: int) -> tuple[dict, int]:
-        if client_id == 0 and len(self.history['round']) == 0:
-            print(f"\n=== BASIC DEBUG ===")
-            print(f"use_sparse: {self.use_sparse}")
-            print(f"mask_by_name is None: {self.mask_by_name is None}")
-            print(f"sparse_strategy: {self.sparse_strategy}")
+        print(f"\n=== BASIC DEBUG ===")
+        print(f"use_sparse: {self.use_sparse}")
+        print(f"mask_by_name is None: {self.mask_by_name is None}")
+        print(f"sparse_strategy: {self.sparse_strategy}")
 
 
         local_model = copy.deepcopy(self.global_model)
@@ -99,16 +98,15 @@ class FedAvg:
             param_mask = self._get_param_mask(local_model)
         
             # ===== DEBUG: Check mask stats (only first client, first round) =====
-            if client_id == 0 and len(self.history['round']) == 0:
-                print(f"\n=== MASK DEBUG (strategy={self.sparse_strategy}) ===")
-                print(f"param_mask is None: {param_mask is None}")
-                print(f"Number of params: {len(params)}")
-                print(f"Number of masks: {len(param_mask) if param_mask else 0}")
-                
-                # Check sparsity per layer
-                for name, mask in self.mask_by_name.items():
-                    sparsity = mask.mean().item() * 100
-                    print(f"  {name}: {mask.sum().item():.0f}/{mask.numel()} ({sparsity:.1f}% active)")
+            print(f"\n=== MASK DEBUG (strategy={self.sparse_strategy}) ===")
+            print(f"param_mask is None: {param_mask is None}")
+            print(f"Number of params: {len(params)}")
+            print(f"Number of masks: {len(param_mask) if param_mask else 0}")
+            
+            # Check sparsity per layer
+            for name, mask in self.mask_by_name.items():
+                sparsity = mask.mean().item() * 100
+                print(f"  {name}: {mask.sum().item():.0f}/{mask.numel()} ({sparsity:.1f}% active)")
             
             optimizer = SparseSGDM(
                 params, lr=self.lr, momentum=self.momentum,
@@ -137,21 +135,20 @@ class FedAvg:
                 optimizer.step()
                 step += 1
 
-        if self.use_sparse and client_id == 0 and len(self.history['round']) == 0:
-            print(f"\n=== WEIGHT CHANGES (strategy={self.sparse_strategy}) ===")
-            for name, p in local_model.named_parameters():
-                diff = (p - initial_weights[name]).abs()
+        print(f"\n=== WEIGHT CHANGES (strategy={self.sparse_strategy}) ===")
+        for name, p in local_model.named_parameters():
+            diff = (p - initial_weights[name]).abs()
+            
+            if name in self.mask_by_name:
+                mask = self.mask_by_name[name].to(p.device)
                 
-                if name in self.mask_by_name:
-                    mask = self.mask_by_name[name].to(p.device)
-                    
-                    # Changes where mask == 1 (should change)
-                    active_diff = (diff * mask).sum().item()
-                    # Changes where mask == 0 (should NOT change)
-                    frozen_diff = (diff * (1 - mask)).sum().item()
-                    
-                    status = "✓" if frozen_diff < 1e-7 else "<-- PROBLEM!"
-                    print(f"  {name}: active={active_diff:.6f}, frozen={frozen_diff:.6f} {status}")
+                # Changes where mask == 1 (should change)
+                active_diff = (diff * mask).sum().item()
+                # Changes where mask == 0 (should NOT change)
+                frozen_diff = (diff * (1 - mask)).sum().item()
+                
+                status = "✓" if frozen_diff < 1e-7 else "<-- PROBLEM!"
+                print(f"  {name}: active={active_diff:.6f}, frozen={frozen_diff:.6f} {status}")
 
         
         return local_model.state_dict(), num_samples
