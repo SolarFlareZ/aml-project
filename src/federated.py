@@ -80,6 +80,11 @@ class FedAvg:
         return indices[:self.clients_per_round].tolist()
     
     def _train_client(self, client_id: int) -> tuple[dict, int]:
+        if client_id == 0 and len(self.history['round']) == 0:
+            print(f"\n=== BASIC DEBUG ===")
+            print(f"use_sparse: {self.use_sparse}")
+            print(f"mask_by_name is None: {self.mask_by_name is None}")
+            print(f"sparse_strategy: {self.sparse_strategy}")
 
 
         local_model = copy.deepcopy(self.global_model)
