@@ -88,8 +88,8 @@ class FisherPruner:
         for name, p in model.named_parameters():
             if p.requires_grad:
                 if self.strategy == "lowest_magnitude":
-                    self.global_mask[name] = (p.data.abs() > threshold).float().cpu()
-                else:
                     self.global_mask[name] = (p.data.abs() <= threshold).float().cpu()
+                else:
+                    self.global_mask[name] = (p.data.abs() > threshold).float().cpu()
         
         return self.global_mask
