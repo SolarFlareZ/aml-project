@@ -118,22 +118,14 @@ class FedAvg:
 
     def _aggregate(self, client_states: List[dict], client_weights: List[int]):
         total = sum(client_weights)
-        global_state = self.global_model.state_dict()
+        aggregated = {}
         
-        aggregated_delta = {}
         for key in client_states[0]:
-            delta = sum(
-                (state[key] - global_state[key]) * (w / total) 
-                for state, w in zip(client_states, client_weights)
+            aggregated[key] = sum(
+                state[key] * (w / total) for state, w in zip(client_states, client_weights)
             )
-            aggregated_delta[key] = delta
         
-        new_state = {
-            key: global_state[key] + self.alpha * aggregated_delta[key]
-            for key in global_state
-        }
-        
-        self.global_model.load_state_dict(new_state)
+        self.global_model.load_state_dict(aggregated)
 
     @torch.no_grad()
     def _evaluate(self, dataloader: DataLoader) -> tuple[float, float]:
