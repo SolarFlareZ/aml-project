@@ -79,39 +79,23 @@ class FedAvg:
         indices = torch.randperm(self.num_clients, generator=generator)
         return indices[:self.clients_per_round].tolist()
     
-    def _train_client(self, client_id: int) -> tuple[dict, int]:
-        print(f"\n=== BASIC DEBUG ===")
-        print(f"use_sparse: {self.use_sparse}")
-        print(f"mask_by_name is None: {self.mask_by_name is None}")
-        print(f"sparse_strategy: {self.sparse_strategy}")
-
-
+    def _train_client(self, client_id: int, is_first_client: bool = False) -> tuple[dict, int]:
         local_model = copy.deepcopy(self.global_model)
         local_model.train()
 
-        if self.use_sparse and client_id == 0:
+        # Store initial weights for debug check
+        if self.use_sparse and is_first_client and len(self.history['round']) == 0:
             initial_weights = {n: p.clone() for n, p in local_model.named_parameters()}
+        else:
+            initial_weights = None
 
         params = [p for p in local_model.parameters() if p.requires_grad]
         
         if self.use_sparse and self.mask_by_name is not None:
-            param_mask = self._get_param_mask(local_model)
-        
-            # ===== DEBUG: Check mask stats (only first client, first round) =====
-            print(f"\n=== MASK DEBUG (strategy={self.sparse_strategy}) ===")
-            print(f"param_mask is None: {param_mask is None}")
-            print(f"Number of params: {len(params)}")
-            print(f"Number of masks: {len(param_mask) if param_mask else 0}")
-            
-            # Check sparsity per layer
-            for name, mask in self.mask_by_name.items():
-                sparsity = mask.mean().item() * 100
-                print(f"  {name}: {mask.sum().item():.0f}/{mask.numel()} ({sparsity:.1f}% active)")
-            
             optimizer = SparseSGDM(
                 params, lr=self.lr, momentum=self.momentum,
                 weight_decay=self.weight_decay,
-                mask=param_mask
+                mask=self._get_param_mask(local_model)
             )
         else:
             optimizer = torch.optim.SGD(
@@ -135,22 +119,23 @@ class FedAvg:
                 optimizer.step()
                 step += 1
 
-        print(f"\n=== WEIGHT CHANGES (strategy={self.sparse_strategy}) ===")
-        for name, p in local_model.named_parameters():
-            diff = (p - initial_weights[name]).abs()
+        # Debug: verify mask is working
+        if initial_weights is not None:
+            print(f"\n=== WEIGHT CHANGES (strategy={self.sparse_strategy}) ===")
+            problems = 0
+            for name, p in local_model.named_parameters():
+                if name in self.mask_by_name:
+                    diff = (p - initial_weights[name]).abs()
+                    mask = self.mask_by_name[name].to(p.device)
+                    frozen_diff = (diff * (1 - mask)).sum().item()
+                    
+                    if frozen_diff > 1e-7:
+                        print(f"  {name}: frozen changed by {frozen_diff:.6f} <-- PROBLEM!")
+                        problems += 1
             
-            if name in self.mask_by_name:
-                mask = self.mask_by_name[name].to(p.device)
-                
-                # Changes where mask == 1 (should change)
-                active_diff = (diff * mask).sum().item()
-                # Changes where mask == 0 (should NOT change)
-                frozen_diff = (diff * (1 - mask)).sum().item()
-                
-                status = "✓" if frozen_diff < 1e-7 else "<-- PROBLEM!"
-                print(f"  {name}: active={active_diff:.6f}, frozen={frozen_diff:.6f} {status}")
+            if problems == 0:
+                print("  All frozen weights stayed frozen ✓")
 
-        
         return local_model.state_dict(), num_samples
     
 
@@ -199,10 +184,12 @@ class FedAvg:
             self._compute_mask()
         
         for round_idx in tqdm(range(start_round, self.num_rounds), desc="FedAvg"):
-            # Local training
             client_states, client_weights = [], []
-            for client_id in self._select_clients(round_idx):
-                state, n = self._train_client(client_id)
+            selected_clients = self._select_clients(round_idx)
+            
+            for i, client_id in enumerate(selected_clients):
+                is_first_client = (i == 0 and round_idx == start_round)  # ADD THIS
+                state, n = self._train_client(client_id, is_first_client=is_first_client)  # CHANGE THIS
                 client_states.append(state)
                 client_weights.append(n)
             
