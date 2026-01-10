@@ -52,5 +52,9 @@ class SparseSGDM(SGD):
                     if 'momentum_buffer' in state:
                         mask_tensor = self.mask[p].to(p.device)
                         state['momentum_buffer'].mul_(mask_tensor)
+                        
+                    #NEW LINES OF CODE
+                    with torch.no_grad():
+                        p.data.mul_(mask_tensor)
         
         return loss
