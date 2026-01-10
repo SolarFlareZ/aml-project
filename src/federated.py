@@ -51,6 +51,21 @@ class FedAvg:
 
 
     def _compute_mask(self):
+        """
+        Step 1: Calibrate gradient mask by identifying least-sensitive parameters.
+        
+        This implements the gradient mask calibration process:
+        - Computes Fisher Information matrix diagonal (squared gradients) over multiple rounds
+        - Identifies parameters with sensitivity scores below user-defined threshold
+        - Creates binary mask: mask[name]=1 for parameters to update, mask[name]=0 to freeze
+        
+        The sparsity_level parameter defines the sensitivity threshold:
+        - sparsity_level=0.7 means 70% of parameters will be frozen (mask=0)
+        - The remaining 30% least-sensitive parameters will be updated (mask=1)
+        
+        Multiple calibration rounds (num_calibration_rounds) ensure robustness against
+        gradient noise and outliers (see [15], Sec. 4.2 for detailed rationale).
+        """
         pruner = FisherPruner(sparsity_level=self.sparsity_level, strategy=self.sparse_strategy)
         calibration_loader = self.datamodule.val_dataloader()
         
@@ -80,18 +95,29 @@ class FedAvg:
         return indices[:self.clients_per_round].tolist()
     
     def _train_client(self, client_id: int) -> tuple[dict, int]:
+        """
+        Step 2: Perform sparse fine-tuning by masking gradients with calibrated masks.
+        
+        Uses SparseSGDM optimizer which:
+        - Applies element-wise gradient masks during optimization
+        - Updates parameters where mask=1 (least-sensitive, sparse fine-tuning)
+        - Freezes parameters where mask=0 (preserves pre-trained values)
+        - Masks momentum buffers to prevent drift at frozen positions
+        """
         local_model = copy.deepcopy(self.global_model)
         local_model.train()
 
         params = [p for p in local_model.parameters() if p.requires_grad]
         
         if self.use_sparse and self.mask_by_name is not None:
+            # Step 2: Use SparseSGDM with calibrated gradient masks
             optimizer = SparseSGDM(
                 params, lr=self.lr, momentum=self.momentum,
                 weight_decay=self.weight_decay,
                 mask=self._get_param_mask(local_model)
             )
         else:
+            # Standard SGD without sparse masking
             optimizer = torch.optim.SGD(
                 params, lr=self.lr, momentum=self.momentum,
                 weight_decay=self.weight_decay
@@ -156,8 +182,21 @@ class FedAvg:
         return checkpoint['round']
 
     def fit(self, eval_every: int = 10, checkpoint_path = None, start_round: int = 0):
+        """
+        Main training loop implementing sparse fine-tuning in federated learning.
+        
+        Process:
+        Step 0: Classifier initialized with Ridge regression (done before fit() if use_sparse=True)
+        Step 1: Calibrate gradient mask (if not already done)
+        Step 2: Federated training with sparse fine-tuning using SparseSGDM
+        
+        Note: Step 0 (Ridge classifier initialization) should be called before fit()
+        using model.initialize_head_with_ridge() to obtain a closed-form classifier
+        that remains frozen after initialization.
+        """
         if self.use_sparse and self.mask_by_name is None:
-            print(f"Calibrating gradient mask")
+            print(f"Step 1: Calibrating gradient mask (sparsity_level={self.sparsity_level}, "
+                  f"num_rounds={self.num_calibration_rounds})")
             self._compute_mask()
         
         for round_idx in tqdm(range(start_round, self.num_rounds), desc="FedAvg"):
