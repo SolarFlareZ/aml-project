@@ -191,9 +191,4 @@ python -m src.train_fedavg
 ```
 
 
-### Task arithmetic evaluation
-```bash
-python -m src.eval_task_arithmetic
-```
-
 All results are deterministic given the fixed seed defined in configs/base.yaml.
