@@ -39,282 +39,161 @@ This repository implements a Federated Learning (FedAvg) with sparse fine-tuning
 ├── results/                    # Logs, checkpoints, outputs
 ├── requirements.txt
 └── README.md
-
+```
 
 
 ##  Environment Setup
 
 
-### 1. Create and activate a virtual environment (recommended)
+### 1. Create and activate a virtual environment
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
+```
 
-2. Install dependencies
+### 2. Install dependencies
+
+```bash
 pip install -r requirements.txt
+```
+
+###  Dataset
+
+The DINO backbone is loaded via torch.hub and requires an active internet connection on first run. The project uses CIFAR-100 via torchvision. The dataset is downloaded automatically. Default location: ./data and No manual download is required.
 
 
-Note: The DINO backbone is loaded via torch.hub and requires an active internet connection on first run.
-
-Dataset
-
-The project uses CIFAR-100 via torchvision.
-
-The dataset is downloaded automatically
-
-Default location: ./data
-
-No manual download is required.
-
-🧪 Experiments and Reproducibility
+## Experiments and Reproducibility
 
 All experiments are controlled via Hydra YAML configurations located in configs/.
 
 Configuration hierarchy:
 
-base.yaml → shared settings
+- base.yaml → shared settings
 
-centralized.yaml → centralized baseline
+- centralized.yaml → centralized baseline
 
-fedavg.yaml → federated learning + sparse task arithmetic
+- fedavg.yaml → federated learning + sparse task arithmetic
 
-1️⃣ Centralized Baseline Training
+## Centralized Baseline Training
 
 This experiment trains a centralized classifier on CIFAR-100 and serves as the baseline model.
 
 Run command
+```bash
 python -m src.train
+```
 
-Configuration used
 
-configs/centralized.yaml
+Configuration used: configs/centralized.yaml that automatically loads base.yaml
 
-Automatically loads base.yaml
 
-Outputs
+## Outputs
 
-Best model checkpoint (by validation accuracy)
+- Best model checkpoint (by validation accuracy)
+- Training and validation logs
+- Test accuracy of the best checkpoint
 
-Training and validation logs
+## Purpose
 
-Test accuracy of the best checkpoint
+- Reference model for comparison with federated learning
 
-Purpose
+- Source of the base model in task arithmetic
 
-Reference model for comparison with federated learning
-
-Source of the base model in task arithmetic
-
-2️⃣ Federated Learning (FedAvg)
+## Federated Learning (FedAvg)
 
 This experiment runs Federated Averaging with configurable client participation, local steps, and data sharding.
 
 Run command
+```bash
 python -m src.train_fedavg
+```
 
-Configuration used
 
-configs/fedavg.yaml
+Configuration used:
 
-Automatically loads base.yaml
+- configs/fedavg.yaml
+- Automatically loads base.yaml
 
-Key configurable parameters
 
-num_clients
+Key configurable parameters:
 
-participation_rate
+- num_clients
+- participation_rate
+- local_steps
+- num_rounds
+- sharding (iid or non_iid)
 
-local_steps
+Outputs:
 
-num_rounds
+- Federated model checkpoints
+- Per-round validation accuracy
+- Final test accuracy
+- JSON file with full experiment history
 
-sharding (iid or non_iid)
 
-Outputs
-
-Federated model checkpoints
-
-Per-round validation accuracy
-
-Final test accuracy
-
-JSON file with full experiment history
-
-3️⃣ Sparse Fine-Tuning (Fisher-Based)
+## Sparse Fine-Tuning (Fisher-Based)
 
 Sparse fine-tuning is enabled inside federated learning by setting:
-
+```yaml
 federated:
   use_sparse: true
+```
 
-Process
 
-Ridge initialization of the classifier head
+Process:
+- Ridge initialization of the classifier head
+- Fisher Information calibration on validation data
+- Selection of least-sensitive parameters
+- Sparse updates using SparseSGDM
 
-Fisher Information calibration on validation data
-
-Selection of least-sensitive parameters
-
-Sparse updates using SparseSGDM
-
+```yaml
 Relevant config fields
 use_sparse: true
 sparsity_level: 0.5
 num_calibration_rounds: 3
 sparse_strategy: least_sensitive
+```
 
 4️⃣ Task Arithmetic Evaluation
 
 This step evaluates linear combinations of the centralized and federated models.
 
-Mathematical form
-𝑊
-new
-=
-𝑊
-base
-+
-𝛼
-(
-𝑊
-fed
-−
-𝑊
-base
-)
-W
-new
-	​
-
-=W
-base
-	​
-
-+α(W
-fed
-	​
-
-−W
-base
-	​
-
-)
 Run command
+```yaml
 python -m src.eval_task_arithmetic
+```
 
-What it does
+What it does:
+- Loads the centralized baseline model
+- Loads the federated model
+- Sweeps over multiple values of α
+- Evaluates each combined model on the test set
 
-Loads the centralized baseline model
+Output:
 
-Loads the federated model
+- Table of test accuracies for different α values
+- Identification of optimal task arithmetic scaling
 
-Sweeps over multiple values of α
+## How to Reproduce the Results
 
-Evaluates each combined model on the test set
+Follow these steps to fully reproduce the experiments reported in this work.
 
-Output
-
-Table of test accuracies for different α values
-
-Identification of optimal task arithmetic scaling
-
-📓 Jupyter Notebooks (Optional)
-
-The notebooks/ folder contains interactive notebooks for understanding and debugging:
-
-Notebook	Purpose
-00_centralized_baseline.ipynb	Sanity check centralized training
-01_federated_baseline.ipynb	Sanity check FedAvg without extensions
-02_task_arithmetic.ipynb	Interactive task arithmetic analysis
-
-⚠️ Important:
-All reported results should be obtained from the Python scripts, not from notebooks.
-Notebooks are provided for exploration and validation only.
-
-🔁 Reproducibility Notes
-
-All randomness is controlled via a global seed
-
-Experiments are fully config-driven
-
-Checkpoints and logs are stored under results/
-
-Hydra ensures consistent experiment instantiation
-
-
-How to Reproduce the Results
-
-This section describes the exact procedure required to reproduce the experimental results reported in this work. All experiments are fully configuration-driven and can be reproduced using the provided scripts and configuration files.
-
-Environment Setup
-
-All experiments were conducted using Python and PyTorch. To reproduce the results, first create a clean virtual environment and install the required dependencies:
-
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-
-The DINO backbone is automatically downloaded via torch.hub during the first execution and requires an active internet connection.
-
-Dataset Preparation
-
-The CIFAR-100 dataset is used for all experiments. The dataset is automatically downloaded using torchvision and stored in the directory specified in configs/base.yaml (default: ./data). No manual dataset preparation is required.
-
-Centralized Baseline Training
-
-The centralized baseline model is trained using the configuration defined in configs/centralized.yaml.
-
-To reproduce the centralized results, run:
-
+### Centralized baseline
+```bash
 python -m src.train
+```
 
 
-This script performs supervised training on the full CIFAR-100 training set, applies validation-based early stopping, and evaluates the best-performing checkpoint on the test set. The resulting model serves as the baseline reference for all subsequent federated and task arithmetic experiments.
-
-Federated Learning with FedAvg
-
-Federated learning experiments are executed using the configuration defined in configs/fedavg.yaml, which extends the shared settings in configs/base.yaml.
-
-To reproduce the federated learning results, run:
-
+### Federated learning + sparse fine-tuning
+```bash
 python -m src.train_fedavg
+```
 
 
-This script simulates federated learning with a configurable number of clients, client participation rate, number of local update steps, and total communication rounds. Both IID and non-IID data distributions are supported and can be selected via the configuration file.
-
-Sparse Fine-Tuning via Fisher Information
-
-Sparse fine-tuning is enabled within federated learning by setting use_sparse: true in configs/fedavg.yaml. When enabled, the following steps are automatically executed:
-
-Ridge-based initialization of the classifier head
-
-Fisher Information–based calibration over multiple rounds
-
-Selection of least-sensitive parameters according to the specified sparsity level
-
-Sparse local updates using a masked SGD optimizer
-
-No additional commands are required beyond running the federated training script.
-
-Task Arithmetic Evaluation
-
-To evaluate the effect of task arithmetic, the centralized baseline model and the final federated model are linearly combined using a scaling factor α.
-
-To reproduce the task arithmetic results, run:
-
+### Task arithmetic evaluation
+```bash
 python -m src.eval_task_arithmetic
+```
 
-
-This script loads the trained centralized and federated models, applies task arithmetic for a range of α values, and evaluates each combined model on the CIFAR-100 test set. The reported accuracies correspond to these evaluations.
-
-Notes on Reproducibility
-
-All experiments use a fixed random seed defined in configs/base.yaml
-
-Hyperparameters are entirely controlled via Hydra configuration files
-
-All checkpoints, logs, and result files are stored under the results/ directory
-
-Jupyter notebooks are provided only for interactive inspection and debugging; all reported results are obtained from the Python scripts
+All results are deterministic given the fixed seed defined in configs/base.yaml.
