@@ -14,11 +14,7 @@ from pytorch_lightning.loggers import CSVLogger # , WandbLogger
 from .datamodule import CIFAR100DataModule
 from .model import DinoClassifier
 
-from .utils import (
-        compute_fisher_importance,
-        build_fisher_mask_most_sensitive,
-        build_magnitude_mask
-    )
+
 
 
 # Define the training function with Hydra configuration
